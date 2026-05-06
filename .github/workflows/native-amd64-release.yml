@@ -1,0 +1,53 @@
+name: Build Native AMD64 Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version, for example 2.0.7-lite"
+        required: true
+        default: "2.0.7-lite"
+  push:
+    tags:
+      - "*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ github.event.inputs.version || github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.23.4"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20.19.0"
+
+      - name: Build native amd64 package
+        run: bash scripts/build_native_amd64.sh
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            echo "Release $VERSION already exists, uploading assets with --clobber"
+          else
+            gh release create "$VERSION" \
+              --title "Flux Lite $VERSION" \
+              --notes "Native amd64 release without Docker, Java, Spring Boot, or ARM assets."
+          fi
+
+          gh release upload "$VERSION" dist/release/flux-panel-native-amd64.tar.gz --clobber
+          gh release upload "$VERSION" dist/release/flux-agent-amd64 --clobber
+          gh release upload "$VERSION" install.sh --clobber
+          gh release upload "$VERSION" panel_install_native.sh --clobber
