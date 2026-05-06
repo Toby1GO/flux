@@ -546,7 +546,7 @@ func (a *App) migrate() error {
 }
 
 func (a *App) handleCaptchaCheck(w http.ResponseWriter, r *http.Request) {
-	ok(w, false)
+	ok(w, 0)
 }
 
 func (a *App) handleCaptchaGenerate(w http.ResponseWriter, r *http.Request) {
