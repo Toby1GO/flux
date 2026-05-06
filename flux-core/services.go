@@ -23,12 +23,9 @@ func (a *App) validateNodesAvailableFromPayload(m map[string]any, tunnelType int
 			return errors.New("节点重复")
 		}
 		ids[id] = true
-		node, err := a.queryOne(`SELECT id,status,exp_time FROM node WHERE id=?`, id)
+		node, err := a.queryOne(`SELECT id,status FROM node WHERE id=?`, id)
 		if err != nil {
 			return errors.New("部分节点不存在")
-		}
-		if exp := intVal(node["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
-			return errors.New("部分节点已到期")
 		}
 		if intVal(node["status"], 0) != 1 {
 			return errors.New("部分节点不在线")
@@ -246,9 +243,6 @@ func (a *App) nodesForChain(chains []map[string]any) (map[int]map[string]any, er
 		if err != nil {
 			return nil, errors.New("部分节点不存在")
 		}
-		if exp := intVal(node["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
-			return nil, errors.New("部分节点已到期")
-		}
 		nodes[id] = node
 	}
 	return nodes, nil
@@ -398,12 +392,6 @@ func (a *App) checkForwardPermission(u CurrentUser, tunnelID int, excludeForward
 }
 
 func (a *App) checkTunnelNodesActive(tunnelID int) error {
-	nodes, _ := a.queryMaps(`SELECT n.* FROM node n JOIN chain_tunnel ct ON ct.node_id=n.id WHERE ct.tunnel_id=?`, tunnelID)
-	for _, node := range nodes {
-		if exp := intVal(node["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
-			return errors.New("隧道包含已到期节点")
-		}
-	}
 	return nil
 }
 
@@ -519,6 +507,9 @@ func (a *App) applyForwardServices(forwardID int, method string) (bool, error) {
 	if err != nil {
 		return false, errors.New("转发不存在")
 	}
+	if over, msg := forwardLimitMessage(fwd); over {
+		return false, errors.New(msg)
+	}
 	tunnel, err := a.queryOne(`SELECT * FROM tunnel WHERE id=?`, intVal(fwd["tunnelId"], 0))
 	if err != nil {
 		return false, errors.New("隧道不存在")
@@ -533,9 +524,6 @@ func (a *App) applyForwardServices(forwardID int, method string) (bool, error) {
 		node, err := a.queryOne(`SELECT * FROM node WHERE id=?`, nodeID)
 		if err != nil {
 			return false, errors.New("部分节点不存在")
-		}
-		if exp := intVal(node["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
-			return false, errors.New("节点已到期")
 		}
 		payload := buildForwardServices(serviceName, limiter, node, fwd, fp, tunnel)
 		resp, err := a.sendAgentCommand(int64(nodeID), method, payload)
@@ -633,6 +621,10 @@ func (a *App) changeForwardState(id int, status int) error {
 	if status == 1 {
 		if err := a.checkTunnelNodesActive(intVal(fwd["tunnelId"], 0)); err != nil {
 			return err
+		}
+		if over, msg := forwardLimitMessage(fwd); over {
+			_, _ = a.db.Exec(`UPDATE forward SET status=0,updated_time=? WHERE id=?`, nowMS(), id)
+			return errors.New(msg)
 		}
 	}
 	ut, _ := a.queryOne(`SELECT id FROM user_tunnel WHERE user_id=? AND tunnel_id=?`, intVal(fwd["userId"], 0), intVal(fwd["tunnelId"], 0))
@@ -799,7 +791,45 @@ func (a *App) processFlow(serviceName string, down int64, up int64) {
 	if userTunnelID != 0 {
 		_, _ = a.db.Exec(`UPDATE user_tunnel SET in_flow=in_flow+?,out_flow=out_flow+? WHERE id=?`, down, up, userTunnelID)
 	}
+	a.pauseForwardIfOverLimit(forwardID)
 	a.pauseIfOverLimit(userID, userTunnelID)
+}
+
+func forwardLimitReached(flow int, expTime int, inFlow int, outFlow int) bool {
+	if expTime > 0 && expTime <= int(nowMS()) {
+		return true
+	}
+	if flow > 0 && flow != 99999 {
+		used := int64(inFlow) + int64(outFlow)
+		return used >= int64(flow)*bytesToGB
+	}
+	return false
+}
+
+func forwardLimitMessage(fwd map[string]any) (bool, string) {
+	if exp := intVal(fwd["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
+		return true, "转发规则已到期"
+	}
+	if flow := intVal(fwd["flow"], 0); flow > 0 && flow != 99999 {
+		used := int64(intVal(fwd["inFlow"], 0)) + int64(intVal(fwd["outFlow"], 0))
+		if used >= int64(flow)*bytesToGB {
+			return true, "转发规则流量已用完"
+		}
+	}
+	return false, ""
+}
+
+func (a *App) pauseForwardIfOverLimit(forwardID int) bool {
+	fwd, err := a.queryOne(`SELECT * FROM forward WHERE id=?`, forwardID)
+	if err != nil || intVal(fwd["status"], 0) != 1 {
+		return false
+	}
+	over, _ := forwardLimitMessage(fwd)
+	if !over {
+		return false
+	}
+	_ = a.changeForwardState(forwardID, 0)
+	return true
 }
 
 func (a *App) pauseIfOverLimit(userID int, userTunnelID int) {
@@ -842,39 +872,21 @@ func (a *App) pauseIfOverLimit(userID int, userTunnelID int) {
 	}
 }
 
-func (a *App) enforceNodeExpiry(nodeID int64) {
-	node, err := a.queryOne(`SELECT exp_time FROM node WHERE id=?`, nodeID)
-	if err != nil {
-		return
-	}
-	exp := intVal(node["expTime"], 0)
-	if exp == 0 || exp > int(nowMS()) {
-		return
-	}
-	forwardPorts, _ := a.queryMaps(`SELECT forward_id FROM forward_port WHERE node_id=?`, nodeID)
-	for _, fp := range forwardPorts {
-		_ = a.changeForwardState(intVal(fp["forwardId"], 0), 0)
-	}
-	_, _ = a.db.Exec(`UPDATE node SET status=0 WHERE id=?`, nodeID)
-	a.closeNode(nodeID, websocket.CloseNormalClosure, "expired")
-	a.broadcast(map[string]any{"id": nodeID, "type": "status", "data": 0})
-}
-
 func (a *App) expiryLoop() {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 	for range ticker.C {
-		a.enforceExpiredNodes()
+		a.enforceExpiredForwards()
 	}
 }
 
-func (a *App) enforceExpiredNodes() {
-	nodes, err := a.queryMaps(`SELECT id FROM node WHERE exp_time>0 AND exp_time<=? AND status=1`, nowMS())
+func (a *App) enforceExpiredForwards() {
+	forwards, err := a.queryMaps(`SELECT id FROM forward WHERE status=1 AND ((exp_time>0 AND exp_time<=?) OR (flow>0 AND flow<>99999 AND (in_flow+out_flow)>=flow*?))`, nowMS(), bytesToGB)
 	if err != nil {
 		return
 	}
-	for _, node := range nodes {
-		a.enforceNodeExpiry(int64(intVal(node["id"], 0)))
+	for _, fwd := range forwards {
+		_ = a.changeForwardState(intVal(fwd["id"], 0), 0)
 	}
 }
 
@@ -894,6 +906,7 @@ func nowDeadline() time.Time {
 }
 
 func processServerAddress(serverAddr string) string {
+	serverAddr = stripAddressScheme(serverAddr)
 	if strings.TrimSpace(serverAddr) == "" || strings.HasPrefix(serverAddr, "[") {
 		return serverAddr
 	}
@@ -910,4 +923,18 @@ func processServerAddress(serverAddr string) string {
 		return "[" + host + "]" + port
 	}
 	return serverAddr
+}
+
+func stripAddressScheme(serverAddr string) string {
+	addr := strings.TrimSpace(serverAddr)
+	if idx := strings.Index(addr, "://"); idx >= 0 {
+		addr = addr[idx+3:]
+	}
+	if at := strings.LastIndex(addr, "@"); at >= 0 {
+		addr = addr[at+1:]
+	}
+	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
+		addr = addr[:idx]
+	}
+	return addr
 }

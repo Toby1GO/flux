@@ -134,7 +134,7 @@ func main() {
 	if err := app.migrate(); err != nil {
 		log.Fatalf("migrate sqlite: %v", err)
 	}
-	app.enforceExpiredNodes()
+	app.enforceExpiredForwards()
 	go app.expiryLoop()
 
 	log.Printf("flux-core listening on %s, db=%s", cfg.ListenAddr, cfg.DBPath)
@@ -427,6 +427,8 @@ func (a *App) migrate() error {
 			tunnel_id INTEGER NOT NULL,
 			remote_addr TEXT NOT NULL,
 			strategy VARCHAR(100) NOT NULL DEFAULT 'fifo',
+			flow INTEGER NOT NULL DEFAULT 0,
+			exp_time INTEGER NOT NULL DEFAULT 0,
 			in_flow INTEGER NOT NULL DEFAULT 0,
 			out_flow INTEGER NOT NULL DEFAULT 0,
 			created_time INTEGER NOT NULL,
@@ -542,6 +544,8 @@ func (a *App) migrate() error {
 		}
 	}
 	_, _ = a.db.Exec(`ALTER TABLE node ADD COLUMN exp_time INTEGER NOT NULL DEFAULT 0`)
+	_, _ = a.db.Exec(`ALTER TABLE forward ADD COLUMN flow INTEGER NOT NULL DEFAULT 0`)
+	_, _ = a.db.Exec(`ALTER TABLE forward ADD COLUMN exp_time INTEGER NOT NULL DEFAULT 0`)
 	return nil
 }
 
@@ -787,7 +791,7 @@ func (a *App) handleNodeCreate(w http.ResponseWriter, r *http.Request) {
 	_, err := a.db.Exec(`INSERT INTO node(name,secret,server_ip,port,interface_name,version,http,tls,socks,created_time,updated_time,status,tcp_listen_addr,udp_listen_addr,exp_time)
 		VALUES(?,?,?,?,?,?,0,0,0,?,?,0,?,?,?)`,
 		strVal(m["name"]), secret, strVal(m["serverIp"]), port, strVal(m["interfaceName"]), "",
-		nowMS(), nowMS(), defaultListenAddr(strVal(m["tcpListenAddr"])), defaultListenAddr(strVal(m["udpListenAddr"])), intVal(m["expTime"], 0))
+		nowMS(), nowMS(), defaultListenAddr(strVal(m["tcpListenAddr"])), defaultListenAddr(strVal(m["udpListenAddr"])), 0)
 	if err != nil {
 		fail(w, -1, err.Error())
 		return
@@ -803,9 +807,6 @@ func (a *App) handleNodeList(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, n := range list {
 		n["secret"] = nil
-		if exp := intVal(n["expTime"], 0); exp > 0 && exp <= int(nowMS()) {
-			n["status"] = 0
-		}
 	}
 	ok(w, list)
 }
@@ -833,8 +834,7 @@ func (a *App) handleNodeUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	_, _ = a.db.Exec(`UPDATE node SET name=?,server_ip=?,port=?,interface_name=?,http=?,tls=?,socks=?,updated_time=?,tcp_listen_addr=?,udp_listen_addr=?,exp_time=? WHERE id=?`,
 		strVal(m["name"]), strVal(m["serverIp"]), port, strVal(m["interfaceName"]), newHTTP, newTLS, newSOCKS, nowMS(),
-		defaultListenAddr(strVal(m["tcpListenAddr"])), defaultListenAddr(strVal(m["udpListenAddr"])), intVal(m["expTime"], 0), id)
-	a.enforceNodeExpiry(int64(id))
+		defaultListenAddr(strVal(m["tcpListenAddr"])), defaultListenAddr(strVal(m["udpListenAddr"])), 0, id)
 	ok(w, nil)
 }
 
@@ -1073,8 +1073,14 @@ func (a *App) handleForwardCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tx, _ := a.db.Begin()
-	res, err := tx.Exec(`INSERT INTO forward(user_id,user_name,name,tunnel_id,remote_addr,strategy,in_flow,out_flow,created_time,updated_time,status,inx)
-		VALUES(?,?,?,?,?,?,0,0,?,?,1,0)`, u.ID, u.Name, strVal(m["name"]), tunnelID, strVal(m["remoteAddr"]), strDefault(strVal(m["strategy"]), "fifo"), nowMS(), nowMS())
+	flow := intVal(m["flow"], 0)
+	expTime := intVal(m["expTime"], 0)
+	status := 1
+	if expTime > 0 && expTime <= int(nowMS()) {
+		status = 0
+	}
+	res, err := tx.Exec(`INSERT INTO forward(user_id,user_name,name,tunnel_id,remote_addr,strategy,flow,exp_time,in_flow,out_flow,created_time,updated_time,status,inx)
+		VALUES(?,?,?,?,?,?,?,?,0,0,?,?,?,0)`, u.ID, u.Name, strVal(m["name"]), tunnelID, strVal(m["remoteAddr"]), strDefault(strVal(m["strategy"]), "fifo"), flow, expTime, nowMS(), nowMS(), status)
 	if err != nil {
 		_ = tx.Rollback()
 		fail(w, -1, err.Error())
@@ -1091,10 +1097,12 @@ func (a *App) handleForwardCreate(w http.ResponseWriter, r *http.Request) {
 		_, _ = tx.Exec(`INSERT INTO forward_port(forward_id,node_id,port) VALUES(?,?,?)`, id, nodeID, port)
 	}
 	_ = tx.Commit()
-	if _, err := a.updateForwardServices(int(id)); err != nil {
-		_ = a.deleteForwardByID(int(id), true)
-		fail(w, -1, err.Error())
-		return
+	if status == 1 {
+		if _, err := a.updateForwardServices(int(id)); err != nil {
+			_ = a.deleteForwardByID(int(id), true)
+			fail(w, -1, err.Error())
+			return
+		}
 	}
 	ok(w, nil)
 }
@@ -1131,17 +1139,34 @@ func (a *App) handleForwardUpdate(w http.ResponseWriter, r *http.Request) {
 		fail(w, -1, err.Error())
 		return
 	}
-	_, _ = a.db.Exec(`UPDATE forward SET name=?,remote_addr=?,strategy=?,updated_time=?,status=1 WHERE id=?`,
-		strVal(m["name"]), strVal(m["remoteAddr"]), strDefault(strVal(m["strategy"]), "fifo"), nowMS(), id)
+	flow := intVal(m["flow"], intVal(fwd["flow"], 0))
+	expTime := intVal(m["expTime"], intVal(fwd["expTime"], 0))
+	status := 1
+	if forwardLimitReached(flow, expTime, intVal(fwd["inFlow"], 0), intVal(fwd["outFlow"], 0)) {
+		status = 0
+	}
+	if status == 0 && intVal(fwd["status"], 0) == 1 {
+		_ = a.changeForwardState(id, 0)
+	}
+	_, _ = a.db.Exec(`UPDATE forward SET name=?,remote_addr=?,strategy=?,flow=?,exp_time=?,updated_time=?,status=? WHERE id=?`,
+		strVal(m["name"]), strVal(m["remoteAddr"]), strDefault(strVal(m["strategy"]), "fifo"), flow, expTime, nowMS(), status, id)
 	if inPort := intVal(m["inPort"], 0); inPort > 0 {
 		if err := a.reallocateForwardPorts(id, tunnelID, inPort); err != nil {
 			fail(w, -1, err.Error())
 			return
 		}
 	}
-	if _, err := a.updateForwardServices(id); err != nil {
-		fail(w, -1, err.Error())
-		return
+	if status == 1 {
+		if _, err := a.updateForwardServices(id); err != nil {
+			fail(w, -1, err.Error())
+			return
+		}
+		if intVal(fwd["status"], 0) == 0 {
+			if err := a.changeForwardState(id, 1); err != nil {
+				fail(w, -1, err.Error())
+				return
+			}
+		}
 	}
 	ok(w, nil)
 }
@@ -1321,14 +1346,6 @@ func (a *App) handleNodeSocket(conn *websocket.Conn, r *http.Request) {
 		return
 	}
 	id := int64(intVal(node["id"], 0))
-	exp := intVal(node["expTime"], 0)
-	if exp > 0 && exp <= int(nowMS()) {
-		_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"Expired","success":false,"message":"node expired"}`))
-		_ = conn.Close()
-		_, _ = a.db.Exec(`UPDATE node SET status=0,updated_time=? WHERE id=?`, nowMS(), id)
-		a.broadcast(map[string]any{"id": id, "type": "status", "data": 0})
-		return
-	}
 
 	a.mu.Lock()
 	if old := a.nodes[id]; old != nil && old.Conn != nil {

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strings"
 )
 
 // Config 配置结构体
@@ -38,6 +39,18 @@ func LoadConfig(configPath string) (*Config, error) {
 	if config.Addr == "" {
 		return nil, fmt.Errorf("服务器地址不能为空")
 	}
+	config.Addr = normalizePanelAddr(config.Addr)
 
 	return &config, nil
+}
+
+func normalizePanelAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
+		addr = strings.TrimPrefix(addr, prefix)
+	}
+	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
+		addr = addr[:idx]
+	}
+	return addr
 }

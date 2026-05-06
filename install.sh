@@ -144,6 +144,18 @@ get_config_params() {
   fi
 }
 
+normalize_server_addr() {
+  local addr="$1"
+  addr="${addr#http://}"
+  addr="${addr#https://}"
+  addr="${addr#ws://}"
+  addr="${addr#wss://}"
+  addr="${addr%%/*}"
+  addr="${addr%%\?*}"
+  addr="${addr%%#*}"
+  printf '%s' "$addr"
+}
+
 # 解析命令行参数
 while getopts "a:s:" opt; do
   case $opt in
@@ -157,6 +169,7 @@ done
 install_flux_agent() {
   echo "🚀 开始安装 flux_agent..."
   get_config_params
+  SERVER_ADDR="$(normalize_server_addr "$SERVER_ADDR")"
 
     # 检查并安装 tcpkill
   check_and_install_tcpkill

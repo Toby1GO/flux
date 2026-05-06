@@ -57,6 +57,8 @@ interface Forward {
   interfaceName?: string;
   strategy: string;
   status: number;
+  flow?: number;
+  expTime?: number;
   inFlow: number;
   outFlow: number;
   serviceRunning: boolean;
@@ -82,6 +84,8 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  flow: string;
+  expTime: string;
 }
 
 interface AddressItem {
@@ -195,7 +199,9 @@ export default function ForwardPage() {
     inPort: null,
     remoteAddr: '',
     interfaceName: '',
-    strategy: 'fifo'
+    strategy: 'fifo',
+    flow: '',
+    expTime: ''
   });
   
   // 表单验证错误
@@ -413,6 +419,13 @@ export default function ForwardPage() {
         newErrors.inPort = '端口必须在 1-65535 之间';
       }
     }
+
+    if (form.flow.trim()) {
+      const flow = Number(form.flow);
+      if (!Number.isFinite(flow) || flow < 0) {
+        newErrors.flow = '流量额度必须是大于等于 0 的数字';
+      }
+    }
     
     if (!form.remoteAddr.trim()) {
       newErrors.remoteAddr = '请输入远程地址';
@@ -445,7 +458,9 @@ export default function ForwardPage() {
       inPort: null,
       remoteAddr: '',
       interfaceName: '',
-      strategy: 'fifo'
+      strategy: 'fifo',
+      flow: '',
+      expTime: ''
     });
     setErrors({});
     setModalOpen(true);
@@ -462,7 +477,9 @@ export default function ForwardPage() {
       inPort: forward.inPort,
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
-      strategy: forward.strategy || 'fifo'
+      strategy: forward.strategy || 'fifo',
+      flow: forward.flow && forward.flow > 0 ? String(forward.flow) : '',
+      expTime: toLocalDateTimeValue(forward.expTime)
     });
     setErrors({});
     setModalOpen(true);
@@ -525,6 +542,10 @@ export default function ForwardPage() {
         .join(',');
 
       const addressCount = processedRemoteAddr.split(',').length;
+      const limitData = {
+        flow: form.flow.trim() ? Number(form.flow) : 0,
+        expTime: fromLocalDateTimeValue(form.expTime)
+      };
       
       let res;
       if (isEdit) {
@@ -536,7 +557,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          ...limitData
         };
         res = await updateForward(updateData);
       } else {
@@ -546,7 +568,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          ...limitData
         };
         res = await createForward(createData);
       }
@@ -684,6 +707,45 @@ export default function ForwardPage() {
     if (value < 1024 * 1024) return (value / 1024).toFixed(2) + ' KB';
     if (value < 1024 * 1024 * 1024) return (value / (1024 * 1024)).toFixed(2) + ' MB';
     return (value / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+  };
+
+  const toLocalDateTimeValue = (expTime?: number): string => {
+    if (!expTime || expTime <= 0) return '';
+    const date = new Date(expTime);
+    if (Number.isNaN(date.getTime())) return '';
+    const offset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+  };
+
+  const fromLocalDateTimeValue = (value: string): number => {
+    if (!value) return 0;
+    const time = new Date(value).getTime();
+    return Number.isNaN(time) ? 0 : time;
+  };
+
+  const formatForwardExpireTime = (expTime?: number): string => {
+    if (!expTime || expTime <= 0) return '永不过期';
+    const date = new Date(expTime);
+    if (Number.isNaN(date.getTime())) return '永不过期';
+    return date.toLocaleString();
+  };
+
+  const getForwardLimitState = (forward: Forward) => {
+    const used = (forward.inFlow || 0) + (forward.outFlow || 0);
+    const quota = forward.flow || 0;
+    const limitBytes = quota > 0 && quota !== 99999 ? quota * 1024 * 1024 * 1024 : 0;
+    return {
+      used,
+      limitBytes,
+      expired: !!forward.expTime && forward.expTime > 0 && forward.expTime <= Date.now(),
+      overQuota: limitBytes > 0 && used >= limitBytes
+    };
+  };
+
+  const formatForwardQuota = (forward: Forward): string => {
+    const limitState = getForwardLimitState(forward);
+    if (!limitState.limitBytes) return '不限流量';
+    return `${formatFlow(limitState.used)} / ${formatFlow(limitState.limitBytes)}`;
   };
 
   // 格式化入口地址
@@ -1010,8 +1072,15 @@ export default function ForwardPage() {
   };
 
   // 获取状态显示
-  const getStatusDisplay = (status: number) => {
-    switch (status) {
+  const getStatusDisplay = (forward: Forward) => {
+    const limitState = getForwardLimitState(forward);
+    if (limitState.expired) {
+      return { color: 'danger', text: '已到期' };
+    }
+    if (limitState.overQuota) {
+      return { color: 'danger', text: '流量用尽' };
+    }
+    switch (forward.status) {
       case 1:
         return { color: 'success', text: '正常' };
       case 0:
@@ -1192,8 +1261,9 @@ export default function ForwardPage() {
 
   // 渲染转发卡片
   const renderForwardCard = (forward: Forward, listeners?: any) => {
-    const statusDisplay = getStatusDisplay(forward.status);
+    const statusDisplay = getStatusDisplay(forward);
     const strategyDisplay = getStrategyDisplay(forward.strategy);
+    const limitState = getForwardLimitState(forward);
     
     return (
       <Card key={forward.id} className="group shadow-sm border border-divider hover:shadow-md transition-shadow duration-200">
@@ -1224,7 +1294,7 @@ export default function ForwardPage() {
                 size="sm"
                 isSelected={forward.serviceRunning}
                 onValueChange={() => handleServiceToggle(forward)}
-                isDisabled={forward.status !== 1 && forward.status !== 0}
+                isDisabled={(forward.status !== 1 && forward.status !== 0) || limitState.expired || limitState.overQuota}
               />
               <Chip 
                 color={statusDisplay.color as any} 
@@ -1283,6 +1353,21 @@ export default function ForwardPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                     </svg>
                   )}
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+              <div className="px-2 py-1.5 rounded border border-default-200 bg-default-50 dark:bg-default-100/50 min-w-0">
+                <div className="text-default-500 mb-0.5">到期时间</div>
+                <div className={`truncate ${limitState.expired ? 'text-danger' : 'text-foreground'}`} title={formatForwardExpireTime(forward.expTime)}>
+                  {formatForwardExpireTime(forward.expTime)}
+                </div>
+              </div>
+              <div className="px-2 py-1.5 rounded border border-default-200 bg-default-50 dark:bg-default-100/50 min-w-0">
+                <div className="text-default-500 mb-0.5">流量额度</div>
+                <div className={`truncate ${limitState.overQuota ? 'text-danger' : 'text-foreground'}`} title={formatForwardQuota(forward)}>
+                  {formatForwardQuota(forward)}
                 </div>
               </div>
             </div>
@@ -1633,6 +1718,30 @@ export default function ForwardPage() {
                       variant="bordered"
                       description="指定入口端口，留空则从节点可用端口中自动分配"
                     />
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <Input
+                        label="到期时间"
+                        type="datetime-local"
+                        value={form.expTime}
+                        onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
+                        variant="bordered"
+                        description="留空表示永不过期"
+                      />
+
+                      <Input
+                        label="总流量额度 (GB)"
+                        placeholder="留空或 0 表示不限流量"
+                        type="number"
+                        min="0"
+                        value={form.flow}
+                        onChange={(e) => setForm(prev => ({ ...prev, flow: e.target.value }))}
+                        isInvalid={!!errors.flow}
+                        errorMessage={errors.flow}
+                        variant="bordered"
+                        description="达到额度后自动暂停这条转发规则"
+                      />
+                    </div>
                     
                     <Textarea
                       label="远程地址"
@@ -2395,4 +2504,4 @@ export default function ForwardPage() {
       </div>
     
   );
-} 
+}

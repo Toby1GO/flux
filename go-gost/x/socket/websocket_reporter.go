@@ -1041,6 +1041,7 @@ func getMemoryInfo() MemoryInfo {
 
 // StartWebSocketReporterWithConfig 使用配置字段启动WebSocket报告器
 func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls int, socks int, version string) *WebSocketReporter {
+	addr = normalizeReporterAddr(addr)
 
 	// 构建初始 WebSocket URL
 	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
@@ -1054,6 +1055,17 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	reporter.version = version
 	reporter.Start()
 	return reporter
+}
+
+func normalizeReporterAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
+		addr = strings.TrimPrefix(addr, prefix)
+	}
+	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
+		addr = addr[:idx]
+	}
+	return addr
 }
 
 // handleTcpPing 处理TCP ping诊断命令

@@ -27,6 +27,7 @@ type TrafficReportItem struct {
 }
 
 func SetHTTPReportURL(addr string, secret string) {
+	addr = normalizeReportAddr(addr)
 	httpReportURL = "http://" + addr + "/flow/upload?secret=" + secret
 	configReportURL = "http://" + addr + "/flow/config?secret=" + secret
 
@@ -39,6 +40,17 @@ func SetHTTPReportURL(addr string, secret string) {
 	} else {
 		fmt.Printf("🔐 HTTP AES 加密器创建成功\n")
 	}
+}
+
+func normalizeReportAddr(addr string) string {
+	addr = strings.TrimSpace(addr)
+	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
+		addr = strings.TrimPrefix(addr, prefix)
+	}
+	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
+		addr = addr[:idx]
+	}
+	return addr
 }
 
 // sendBatchTrafficReport 批量发送多个服务的流量报告到HTTP接口
@@ -111,7 +123,6 @@ func sendBatchTrafficReport(ctx context.Context, reportItems []TrafficReportItem
 		return false, fmt.Errorf("服务器响应: %s (期望: ok)", responseText)
 	}
 }
-
 
 // sendConfigReport 发送配置报告到HTTP接口
 func sendConfigReport(ctx context.Context) (bool, error) {

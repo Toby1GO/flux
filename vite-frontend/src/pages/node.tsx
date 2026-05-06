@@ -31,7 +31,6 @@ interface Node {
   tcpListenAddr?: string;
   udpListenAddr?: string;
   version?: string;
-  expTime?: number;
   http?: number; // 0 关 1 开
   tls?: number;  // 0 关 1 开
   socks?: number; // 0 关 1 开
@@ -57,7 +56,6 @@ interface NodeForm {
   tcpListenAddr: string;
   udpListenAddr: string;
   interfaceName: string;
-  expTime: string;
   http: number; // 0 关 1 开
   tls: number;  // 0 关 1 开
   socks: number; // 0 关 1 开
@@ -83,7 +81,6 @@ export default function NodePage() {
     tcpListenAddr: '[::]',
     udpListenAddr: '[::]',
     interfaceName: '',
-    expTime: '',
     http: 0,
     tls: 0,
     socks: 0
@@ -336,31 +333,6 @@ export default function NodePage() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const toLocalDateTimeValue = (expTime?: number): string => {
-    if (!expTime || expTime <= 0) return '';
-    const date = new Date(expTime);
-    if (Number.isNaN(date.getTime())) return '';
-    const offset = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() - offset).toISOString().slice(0, 16);
-  };
-
-  const fromLocalDateTimeValue = (value: string): number => {
-    if (!value) return 0;
-    const time = new Date(value).getTime();
-    return Number.isNaN(time) ? 0 : time;
-  };
-
-  const formatNodeExpireTime = (expTime?: number): string => {
-    if (!expTime || expTime <= 0) return '永不过期';
-    const date = new Date(expTime);
-    if (Number.isNaN(date.getTime())) return '永不过期';
-    return date.toLocaleString();
-  };
-
-  const isNodeExpired = (node: Node): boolean => {
-    return !!node.expTime && node.expTime > 0 && node.expTime <= Date.now();
-  };
-
   // 获取进度条颜色
   const getProgressColor = (value: number, offline = false): "default" | "primary" | "secondary" | "success" | "warning" | "danger" => {
     if (offline) return "default";
@@ -494,7 +466,6 @@ export default function NodePage() {
       tcpListenAddr: node.tcpListenAddr || '[::]',
       udpListenAddr: node.udpListenAddr || '[::]',
       interfaceName: (node as any).interfaceName || '',
-      expTime: toLocalDateTimeValue(node.expTime),
       http: typeof node.http === 'number' ? node.http : 1,
       tls: typeof node.tls === 'number' ? node.tls : 1,
       socks: typeof node.socks === 'number' ? node.socks : 1
@@ -581,10 +552,7 @@ export default function NodePage() {
     
     try {
       const apiCall = isEdit ? updateNode : createNode;
-      const data = { 
-        ...form,
-        expTime: fromLocalDateTimeValue(form.expTime)
-      };
+      const data = { ...form };
       
       const res = await apiCall(data);
       if (res.code === 0) {
@@ -601,7 +569,6 @@ export default function NodePage() {
               tcpListenAddr: form.tcpListenAddr,
               udpListenAddr: form.udpListenAddr,
               interfaceName: form.interfaceName,
-              expTime: fromLocalDateTimeValue(form.expTime),
               http: form.http,
               tls: form.tls,
               socks: form.socks
@@ -630,7 +597,6 @@ export default function NodePage() {
       tcpListenAddr: '[::]',
       udpListenAddr: '[::]',
       interfaceName: '',
-      expTime: '',
       http: 0,
       tls: 0,
       socks: 0
@@ -693,18 +659,18 @@ export default function NodePage() {
                   <div className="flex justify-between items-start w-full">
                     <div className="flex-1 min-w-0">
                       <h3 className="font-semibold text-foreground truncate text-sm">{node.name}</h3>
-                      <p className={`text-xs truncate ${isNodeExpired(node) ? 'text-danger' : 'text-default-500'}`}>
-                        {formatNodeExpireTime(node.expTime)}
+                      <p className="text-xs truncate text-default-500">
+                        {node.serverIp}
                       </p>
                     </div>
                     <div className="flex items-center gap-1.5 ml-2">
                       <Chip 
-                        color={isNodeExpired(node) ? 'danger' : node.connectionStatus === 'online' ? 'success' : 'danger'} 
+                        color={node.connectionStatus === 'online' ? 'success' : 'danger'}
                         variant="flat" 
                         size="sm"
                         className="text-xs"
                       >
-                        {isNodeExpired(node) ? '已过期' : node.connectionStatus === 'online' ? '在线' : '离线'}
+                        {node.connectionStatus === 'online' ? '在线' : '离线'}
                       </Chip>
                     </div>
                   </div>
@@ -909,15 +875,6 @@ export default function NodePage() {
                   classNames={{
                     input: "font-mono"
                   }}
-                />
-
-                <Input
-                  label="节点到期时间"
-                  type="datetime-local"
-                  value={form.expTime}
-                  onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
-                  variant="bordered"
-                  description="留空表示永不过期；到期后中央面板会拒绝节点接入并暂停相关转发"
                 />
 
                 {/* 高级配置 */}
