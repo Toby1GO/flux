@@ -111,6 +111,11 @@ export default function NodePage() {
     setLoading(true);
     try {
       const res = await getNodeList();
+      if (!res || typeof res !== 'object') {
+        setNodeList([]);
+        return;
+      }
+
       if (res.code === 0) {
         const nodes = Array.isArray(res.data) ? res.data : [];
         setNodeList(nodes.map((node: any) => ({
@@ -120,10 +125,12 @@ export default function NodePage() {
           copyLoading: false
         })));
       } else {
-        toast.error(res.msg || '加载节点列表失败');
+        console.warn('load node list failed:', res.msg || res);
+        setNodeList([]);
       }
     } catch (error) {
-      toast.error('网络错误，请重试');
+      console.warn('load node list failed:', error);
+      setNodeList([]);
     } finally {
       setLoading(false);
     }
@@ -178,7 +185,9 @@ export default function NodePage() {
     const base = apiBase.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
     let wsBase: string;
 
-    if (/^https?:\/\//i.test(base)) {
+    if (/^\/\//.test(base)) {
+      wsBase = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}${base}`;
+    } else if (/^https?:\/\//i.test(base)) {
       wsBase = base.replace(/^http/i, 'ws');
     } else {
       const path = base.startsWith('/') ? base : `/${base}`;

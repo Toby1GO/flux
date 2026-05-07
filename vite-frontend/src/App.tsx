@@ -7,7 +7,6 @@ import DashboardPage from "@/pages/dashboard";
 import ForwardPage from "@/pages/forward";
 import TunnelPage from "@/pages/tunnel";
 import NodePage from "@/pages/node";
-import UserPage from "@/pages/user";
 import ProfilePage from "@/pages/profile";
 import LimitPage from "@/pages/limit";
 import ConfigPage from "@/pages/config";
@@ -186,14 +185,6 @@ function App() {
         element={
           <ProtectedRoute>
             <NodePage />
-          </ProtectedRoute>
-        } 
-      />
-      <Route 
-        path="/user" 
-        element={
-          <ProtectedRoute useSimpleLayout={true}>
-            <UserPage />
           </ProtectedRoute>
         } 
       />
