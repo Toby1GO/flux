@@ -51,11 +51,17 @@ generate_random() {
 }
 
 read_config() {
-  read -p "面板端口（默认 6366，一个端口同时提供网页和API）: " PANEL_PORT
+  read -p "面板网页/API端口（默认 6366）: " PANEL_PORT
   PANEL_PORT=${PANEL_PORT:-6366}
 
-  read -p "面板公网地址，可留空后续在网站配置里填（例：http://1.2.3.4:${PANEL_PORT}）: " PUBLIC_ADDR
+  read -p "节点通信端口（默认 6367，建议不要和网页端口相同）: " AGENT_PORT
+  AGENT_PORT=${AGENT_PORT:-6367}
+
+  read -p "面板公网访问地址，可留空后续在网站配置里填（例：http://1.2.3.4:${PANEL_PORT}）: " PUBLIC_ADDR
   PUBLIC_ADDR=${PUBLIC_ADDR:-}
+
+  read -p "节点通信公网地址，可留空后续在网站配置里填（例：1.2.3.4:${AGENT_PORT}）: " AGENT_PUBLIC_ADDR
+  AGENT_PUBLIC_ADDR=${AGENT_PUBLIC_ADDR:-}
 
   read -p "节点安装脚本地址，可留空使用当前 release 中的 install.sh: " AGENT_INSTALL_URL
   AGENT_INSTALL_URL=${AGENT_INSTALL_URL:-https://github.com/${REPO}/releases/download/${VERSION}/install.sh}
@@ -98,10 +104,12 @@ install_files() {
 
   $SUDO tee "$INSTALL_DIR/.env" >/dev/null <<EOF
 FLUX_CORE_ADDR=0.0.0.0:${PANEL_PORT}
+FLUX_AGENT_ADDR=0.0.0.0:${AGENT_PORT}
 FLUX_DB_PATH=${INSTALL_DIR}/data/panel.db
 STATIC_DIR=${INSTALL_DIR}/web
 JWT_SECRET=${JWT_SECRET}
 PUBLIC_ADDR=${PUBLIC_ADDR}
+AGENT_PUBLIC_ADDR=${AGENT_PUBLIC_ADDR}
 AGENT_INSTALL_URL=${AGENT_INSTALL_URL}
 AGENT_RELEASE_URL=${AGENT_RELEASE_URL}
 EOF
@@ -137,6 +145,7 @@ print_result() {
   echo "🎉 原生部署完成"
   echo "安装目录: $INSTALL_DIR"
   echo "访问地址: http://服务器IP:${PANEL_PORT}"
+  echo "节点通信地址: 服务器IP:${AGENT_PORT}"
   echo "默认管理员: admin_user / admin_user"
   echo ""
   echo "查看日志:"

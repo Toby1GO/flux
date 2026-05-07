@@ -39,9 +39,11 @@ const (
 
 type Config struct {
 	ListenAddr      string
+	AgentListenAddr string
 	DBPath          string
 	JWTSecret       string
 	PublicAddr      string
+	AgentPublicAddr string
 	AgentInstallURL string
 	AgentReleaseURL string
 	StaticDir       string
@@ -137,6 +139,15 @@ func main() {
 	app.enforceExpiredForwards()
 	go app.expiryLoop()
 
+	if cfg.AgentListenAddr != "" && strings.TrimSpace(cfg.AgentListenAddr) != strings.TrimSpace(cfg.ListenAddr) {
+		go func() {
+			log.Printf("flux-agent gateway listening on %s", cfg.AgentListenAddr)
+			if err := http.ListenAndServe(cfg.AgentListenAddr, app.agentRoutes()); err != nil {
+				log.Fatalf("agent gateway listen: %v", err)
+			}
+		}()
+	}
+
 	log.Printf("flux-core listening on %s, db=%s", cfg.ListenAddr, cfg.DBPath)
 	if err := http.ListenAndServe(cfg.ListenAddr, app.routes()); err != nil {
 		log.Fatal(err)
@@ -154,9 +165,11 @@ func loadConfig() Config {
 	}
 	return Config{
 		ListenAddr:      addr,
+		AgentListenAddr: os.Getenv("FLUX_AGENT_ADDR"),
 		DBPath:          env("FLUX_DB_PATH", defaultDBPath),
 		JWTSecret:       env("JWT_SECRET", defaultJWT),
 		PublicAddr:      os.Getenv("PUBLIC_ADDR"),
+		AgentPublicAddr: env("AGENT_PUBLIC_ADDR", os.Getenv("PUBLIC_ADDR")),
 		AgentInstallURL: os.Getenv("AGENT_INSTALL_URL"),
 		AgentReleaseURL: os.Getenv("AGENT_RELEASE_URL"),
 		StaticDir:       os.Getenv("STATIC_DIR"),
@@ -173,10 +186,7 @@ func env(key, fallback string) string {
 func (a *App) routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("/flow/test", a.wrapPublic(a.handleFlowTest))
-	mux.HandleFunc("/flow/upload", a.wrapPublic(a.handleFlowUpload))
-	mux.HandleFunc("/flow/config", a.wrapPublic(a.handleFlowConfig))
-	mux.HandleFunc("/system-info", a.handleSystemInfo)
+	a.registerAgentRoutes(mux)
 
 	mux.HandleFunc("/api/v1/captcha/check", a.wrapPublic(a.handleCaptchaCheck))
 	mux.HandleFunc("/api/v1/captcha/generate", a.wrapPublic(a.handleCaptchaGenerate))
@@ -233,13 +243,30 @@ func (a *App) routes() http.Handler {
 		mux.HandleFunc("/", a.handleStatic)
 	}
 
+	return a.withCORS(mux)
+}
+
+func (a *App) agentRoutes() http.Handler {
+	mux := http.NewServeMux()
+	a.registerAgentRoutes(mux)
+	return a.withCORS(mux)
+}
+
+func (a *App) registerAgentRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("/flow/test", a.wrapPublic(a.handleFlowTest))
+	mux.HandleFunc("/flow/upload", a.wrapPublic(a.handleFlowUpload))
+	mux.HandleFunc("/flow/config", a.wrapPublic(a.handleFlowConfig))
+	mux.HandleFunc("/system-info", a.handleSystemInfo)
+}
+
+func (a *App) withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.cors(w)
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
-		mux.ServeHTTP(w, r)
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -858,14 +885,22 @@ func (a *App) handleNodeInstall(w http.ResponseWriter, r *http.Request) {
 		fail(w, -1, "节点不存在")
 		return
 	}
-	publicAddr := a.cfg.PublicAddr
+	publicAddr := a.cfg.AgentPublicAddr
+	if publicAddr == "" {
+		if cfg, err := a.queryOne(`SELECT value FROM vite_config WHERE name='agent_addr'`); err == nil {
+			publicAddr = strVal(cfg["value"])
+		}
+	}
 	if publicAddr == "" {
 		if cfg, err := a.queryOne(`SELECT value FROM vite_config WHERE name='ip'`); err == nil {
 			publicAddr = strVal(cfg["value"])
 		}
 	}
 	if publicAddr == "" {
-		fail(w, -1, "请先在网站配置中设置面板地址")
+		publicAddr = a.cfg.PublicAddr
+	}
+	if publicAddr == "" {
+		fail(w, -1, "请先在网站配置中设置节点通信地址")
 		return
 	}
 	url := a.cfg.AgentInstallURL

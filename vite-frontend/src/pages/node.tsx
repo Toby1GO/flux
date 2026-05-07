@@ -112,7 +112,8 @@ export default function NodePage() {
     try {
       const res = await getNodeList();
       if (res.code === 0) {
-        setNodeList(res.data.map((node: any) => ({
+        const nodes = Array.isArray(res.data) ? res.data : [];
+        setNodeList(nodes.map((node: any) => ({
           ...node,
           connectionStatus: node.status === 1 ? 'online' : 'offline',
           systemInfo: null,
@@ -140,9 +141,7 @@ export default function NodePage() {
       closeWebSocket();
     }
     
-    // 构建WebSocket URL，使用axios的baseURL
-    const baseUrl = axios.defaults.baseURL || (import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/');
-    const wsUrl = baseUrl.replace(/^http/, 'ws').replace(/\/api\/v1\/$/, '') + `/system-info?type=0&secret=${localStorage.getItem('token')}`;
+    const wsUrl = buildWebSocketUrl();
     
     try {
       websocketRef.current = new WebSocket(wsUrl);
@@ -171,6 +170,22 @@ export default function NodePage() {
     } catch (error) {
       attemptReconnect();
     }
+  };
+
+  const buildWebSocketUrl = () => {
+    const token = encodeURIComponent(localStorage.getItem('token') || '');
+    const apiBase = axios.defaults.baseURL || (import.meta.env.VITE_API_BASE ? `${import.meta.env.VITE_API_BASE}/api/v1/` : '/api/v1/');
+    const base = apiBase.replace(/\/api\/v1\/?$/, '').replace(/\/$/, '');
+    let wsBase: string;
+
+    if (/^https?:\/\//i.test(base)) {
+      wsBase = base.replace(/^http/i, 'ws');
+    } else {
+      const path = base.startsWith('/') ? base : `/${base}`;
+      wsBase = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${path === '/' ? '' : path}`;
+    }
+
+    return `${wsBase}/system-info?type=0&secret=${token}`;
   };
 
   // 处理WebSocket消息

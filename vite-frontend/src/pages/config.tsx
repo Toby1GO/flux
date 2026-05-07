@@ -46,9 +46,16 @@ interface ConfigItem {
 const CONFIG_ITEMS: ConfigItem[] = [
   {
     key: 'ip',
-    label: '面板后端地址',
-    placeholder: '请输入面板后端IP:PORT',
-    description: '格式“ip:port”,用于对接节点时使用,ip是你安装面板服务器的公网ip,端口是安装脚本内输入的后端端口。不要套CDN,不支持https,通讯数据有加密',
+    label: '面板访问地址',
+    placeholder: '例如：http://1.2.3.4:6366',
+    description: '网页/API 的公网访问地址，用于记录面板入口；节点通信请使用下面的独立地址。',
+    type: 'input'
+  },
+  {
+    key: 'agent_addr',
+    label: '节点通信地址',
+    placeholder: '例如：1.2.3.4:6367',
+    description: '节点安装命令会优先使用这里。建议使用独立端口，不要套 CDN；可以填 ip:port 或 http://ip:port。',
     type: 'input'
   },
   {
@@ -105,7 +112,7 @@ const CONFIG_ITEMS: ConfigItem[] = [
 const getInitialConfigs = (): Record<string, string> => {
   if (typeof window === 'undefined') return {};
   
-  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip'];
+  const configKeys = ['app_name', 'captcha_enabled', 'captcha_type', 'ip', 'agent_addr'];
   const initialConfigs: Record<string, string> = {};
   
   try {
@@ -426,4 +433,4 @@ export default function ConfigPage() {
       </div>
     
   );
-} 
+}
