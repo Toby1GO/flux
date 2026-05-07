@@ -61,6 +61,43 @@ interface NodeForm {
   socks: number; // 0 关 1 开
 }
 
+const parseNodeSystemInfo = (raw: any, previous?: Node['systemInfo'] | null): Node['systemInfo'] | null => {
+  if (!raw) return null;
+
+  try {
+    const systemInfo = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    if (!systemInfo || typeof systemInfo !== 'object') return null;
+
+    const currentUpload = parseInt(systemInfo.bytes_transmitted ?? systemInfo.uploadTraffic ?? '0') || 0;
+    const currentDownload = parseInt(systemInfo.bytes_received ?? systemInfo.downloadTraffic ?? '0') || 0;
+    const currentUptime = parseInt(systemInfo.uptime ?? '0') || 0;
+    let uploadSpeed = 0;
+    let downloadSpeed = 0;
+
+    if (previous && previous.uptime) {
+      const timeDiff = currentUptime - previous.uptime;
+      if (timeDiff > 0 && timeDiff <= 15) {
+        const uploadDiff = currentUpload - (previous.uploadTraffic || 0);
+        const downloadDiff = currentDownload - (previous.downloadTraffic || 0);
+        if (uploadDiff >= 0) uploadSpeed = uploadDiff / timeDiff;
+        if (downloadDiff >= 0) downloadSpeed = downloadDiff / timeDiff;
+      }
+    }
+
+    return {
+      cpuUsage: parseFloat(systemInfo.cpu_usage ?? systemInfo.cpuUsage ?? '0') || 0,
+      memoryUsage: parseFloat(systemInfo.memory_usage ?? systemInfo.memoryUsage ?? '0') || 0,
+      uploadTraffic: currentUpload,
+      downloadTraffic: currentDownload,
+      uploadSpeed,
+      downloadSpeed,
+      uptime: currentUptime
+    };
+  } catch (error) {
+    return null;
+  }
+};
+
 export default function NodePage() {
   const [nodeList, setNodeList] = useState<Node[]>([]);
   const [loading, setLoading] = useState(false);
@@ -100,8 +137,10 @@ export default function NodePage() {
   useEffect(() => {
     loadNodes();
     initWebSocket();
+    const refreshTimer = setInterval(loadNodes, 10000);
     
     return () => {
+      clearInterval(refreshTimer);
       closeWebSocket();
     };
   }, []);
@@ -118,12 +157,19 @@ export default function NodePage() {
 
       if (res.code === 0) {
         const nodes = Array.isArray(res.data) ? res.data : [];
-        setNodeList(nodes.map((node: any) => ({
-          ...node,
-          connectionStatus: node.status === 1 ? 'online' : 'offline',
-          systemInfo: null,
-          copyLoading: false
-        })));
+        setNodeList(prev => {
+          const previousInfo = new Map(prev.map(node => [node.id, node.systemInfo]));
+          return nodes.map((node: any) => {
+            const online = node.status === 1;
+            const systemInfo = online ? parseNodeSystemInfo(node.systemInfo ?? node.system_info, previousInfo.get(node.id)) : null;
+            return {
+              ...node,
+              connectionStatus: online ? 'online' : 'offline',
+              systemInfo,
+              copyLoading: false
+            };
+          });
+        });
       } else {
         console.warn('load node list failed:', res.msg || res);
         setNodeList([]);

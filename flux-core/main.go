@@ -56,6 +56,7 @@ type App struct {
 
 	mu       sync.RWMutex
 	nodes    map[int64]*NodeSession
+	nodeInfo map[int64]string
 	admins   map[*websocket.Conn]bool
 	adminMux map[*websocket.Conn]*sync.Mutex
 }
@@ -129,6 +130,7 @@ func main() {
 			CheckOrigin: func(r *http.Request) bool { return true },
 		},
 		nodes:    make(map[int64]*NodeSession),
+		nodeInfo: make(map[int64]string),
 		admins:   make(map[*websocket.Conn]bool),
 		adminMux: make(map[*websocket.Conn]*sync.Mutex),
 	}
@@ -138,6 +140,7 @@ func main() {
 	}
 	app.enforceExpiredForwards()
 	go app.expiryLoop()
+	go app.nodeHealthLoop()
 
 	if cfg.AgentListenAddr != "" && strings.TrimSpace(cfg.AgentListenAddr) != strings.TrimSpace(cfg.ListenAddr) {
 		go func() {
@@ -834,6 +837,13 @@ func (a *App) handleNodeList(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, n := range list {
 		n["secret"] = nil
+		id := int64(intVal(n["id"], 0))
+		a.mu.RLock()
+		info := a.nodeInfo[id]
+		a.mu.RUnlock()
+		if info != "" {
+			n["systemInfo"] = info
+		}
 	}
 	ok(w, list)
 }
@@ -1361,6 +1371,11 @@ func (a *App) handleFlowUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("type") == "1" && r.Method == http.MethodPost {
+		a.handleNodeHeartbeat(w, r)
+		return
+	}
+
 	conn, err := a.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -1371,6 +1386,39 @@ func (a *App) handleSystemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.handleAdminSocket(conn, r)
+}
+
+func (a *App) handleNodeHeartbeat(w http.ResponseWriter, r *http.Request) {
+	secret := r.URL.Query().Get("secret")
+	node, err := a.queryOne(`SELECT * FROM node WHERE secret=?`, secret)
+	if err != nil {
+		http.Error(w, "invalid node secret", http.StatusUnauthorized)
+		return
+	}
+	defer r.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "read heartbeat failed", http.StatusBadRequest)
+		return
+	}
+	body = a.decryptIfNeeded(body, secret)
+	if !json.Valid(body) {
+		http.Error(w, "invalid heartbeat payload", http.StatusBadRequest)
+		return
+	}
+	id := int64(intVal(node["id"], 0))
+	version := r.URL.Query().Get("version")
+	if version != "" {
+		_, _ = a.db.Exec(`UPDATE node SET status=1,version=?,http=?,tls=?,socks=?,updated_time=? WHERE id=?`,
+			version, qInt(r, "http"), qInt(r, "tls"), qInt(r, "socks"), nowMS(), id)
+	} else {
+		_, _ = a.db.Exec(`UPDATE node SET status=1,http=?,tls=?,socks=?,updated_time=? WHERE id=?`,
+			qInt(r, "http"), qInt(r, "tls"), qInt(r, "socks"), nowMS(), id)
+	}
+	a.rememberNodeInfo(id, string(body))
+	a.broadcast(map[string]any{"id": id, "type": "status", "data": 1})
+	a.broadcast(map[string]any{"id": id, "type": "info", "data": string(body)})
+	_, _ = w.Write([]byte("ok"))
 }
 
 func (a *App) handleNodeSocket(conn *websocket.Conn, r *http.Request) {
@@ -1395,13 +1443,17 @@ func (a *App) handleNodeSocket(conn *websocket.Conn, r *http.Request) {
 	a.broadcast(map[string]any{"id": id, "type": "status", "data": 1})
 
 	defer func() {
+		shouldBroadcast := false
 		a.mu.Lock()
 		if a.nodes[id] == ns {
 			delete(a.nodes, id)
+			shouldBroadcast = true
+		}
+		a.mu.Unlock()
+		if shouldBroadcast {
 			_, _ = a.db.Exec(`UPDATE node SET status=0,updated_time=? WHERE id=?`, nowMS(), id)
 			a.broadcast(map[string]any{"id": id, "type": "status", "data": 0})
 		}
-		a.mu.Unlock()
 		_ = conn.Close()
 	}()
 
@@ -1428,8 +1480,19 @@ func (a *App) handleNodeSocket(conn *websocket.Conn, r *http.Request) {
 				continue
 			}
 		}
+		_, _ = a.db.Exec(`UPDATE node SET status=1,updated_time=? WHERE id=?`, nowMS(), id)
+		a.rememberNodeInfo(id, string(msg))
 		a.broadcast(map[string]any{"id": id, "type": "info", "data": string(msg)})
 	}
+}
+
+func (a *App) rememberNodeInfo(id int64, info string) {
+	if info == "" {
+		return
+	}
+	a.mu.Lock()
+	a.nodeInfo[id] = info
+	a.mu.Unlock()
 }
 
 func (a *App) handleAdminSocket(conn *websocket.Conn, r *http.Request) {

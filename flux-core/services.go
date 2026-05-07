@@ -880,6 +880,33 @@ func (a *App) expiryLoop() {
 	}
 }
 
+func (a *App) nodeHealthLoop() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+	for range ticker.C {
+		a.markStaleNodesOffline(25 * time.Second)
+	}
+}
+
+func (a *App) markStaleNodesOffline(maxAge time.Duration) {
+	cutoff := nowMS() - maxAge.Milliseconds()
+	nodes, err := a.queryMaps(`SELECT id FROM node WHERE status=1 AND updated_time<?`, cutoff)
+	if err != nil {
+		return
+	}
+	for _, row := range nodes {
+		id := int64(intVal(row["id"], 0))
+		a.mu.RLock()
+		active := a.nodes[id] != nil
+		a.mu.RUnlock()
+		if active {
+			continue
+		}
+		_, _ = a.db.Exec(`UPDATE node SET status=0,updated_time=? WHERE id=?`, nowMS(), id)
+		a.broadcast(map[string]any{"id": id, "type": "status", "data": 0})
+	}
+}
+
 func (a *App) enforceExpiredForwards() {
 	forwards, err := a.queryMaps(`SELECT id FROM forward WHERE status=1 AND ((exp_time>0 AND exp_time<=?) OR (flow>0 AND flow<>99999 AND (in_flow+out_flow)>=flow*?))`, nowMS(), bytesToGB)
 	if err != nil {

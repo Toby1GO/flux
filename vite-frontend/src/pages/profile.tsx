@@ -5,8 +5,6 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, useDisclosure
 import { Input } from "@heroui/input";
 import { toast } from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
-import { isWebViewFunc } from '@/utils/panel';
-import { siteConfig } from '@/config/site';
 import { updatePassword } from '@/api';
 import { safeLogout } from '@/utils/logout';
 interface PasswordForm {
@@ -226,24 +224,6 @@ export default function ProfilePage() {
             </div>
           </CardBody>
         </Card>
-
-        <div className="fixed inset-x-0 bottom-20 text-center py-4">
-               <p className="text-xs text-gray-400 dark:text-gray-500">
-                 Powered by{' '}
-                 <a 
-                   href="https://github.com/bqlpfy/flux-panel" 
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-                 >
-                   flux-panel
-                 </a>
-               </p>
-               <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                 v{ isWebViewFunc() ? siteConfig.app_version : siteConfig.version}
-               </p>
-             </div>
-
       </div>
 
 

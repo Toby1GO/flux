@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -156,6 +157,9 @@ func (w *WebSocketReporter) run() {
 
 			if needConnect {
 				if err := w.connect(); err != nil {
+					if heartbeatErr := w.sendHTTPHeartbeat(w.collectSystemInfo()); heartbeatErr != nil {
+						fmt.Printf("⚠️ HTTP心跳上报失败: %v\n", heartbeatErr)
+					}
 					fmt.Printf("❌ WebSocket连接失败: %v，%v后重试\n", err, w.reconnectTime)
 					select {
 					case <-time.After(w.reconnectTime):
@@ -318,35 +322,9 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 		return fmt.Errorf("连接未建立")
 	}
 
-	// 转换为JSON
-	jsonData, err := json.Marshal(sysInfo)
+	messageData, err := w.buildSystemInfoMessage(sysInfo)
 	if err != nil {
-		return fmt.Errorf("序列化系统信息失败: %v", err)
-	}
-
-	var messageData []byte
-
-	// 如果有加密器，则加密数据
-	if w.aesCrypto != nil {
-		encryptedData, err := w.aesCrypto.Encrypt(jsonData)
-		if err != nil {
-			fmt.Printf("⚠️ 加密失败，发送原始数据: %v\n", err)
-			messageData = jsonData
-		} else {
-			// 创建加密消息包装器
-			encryptedMessage := map[string]interface{}{
-				"encrypted": true,
-				"data":      encryptedData,
-				"timestamp": time.Now().Unix(),
-			}
-			messageData, err = json.Marshal(encryptedMessage)
-			if err != nil {
-				fmt.Printf("⚠️ 序列化加密消息失败，发送原始数据: %v\n", err)
-				messageData = jsonData
-			}
-		}
-	} else {
-		messageData = jsonData
+		return err
 	}
 
 	// 设置写入超时
@@ -358,6 +336,77 @@ func (w *WebSocketReporter) sendSystemInfo(sysInfo SystemInfo) error {
 	}
 
 	return nil
+}
+
+func (w *WebSocketReporter) buildSystemInfoMessage(sysInfo SystemInfo) ([]byte, error) {
+	jsonData, err := json.Marshal(sysInfo)
+	if err != nil {
+		return nil, fmt.Errorf("序列化系统信息失败: %v", err)
+	}
+
+	if w.aesCrypto == nil {
+		return jsonData, nil
+	}
+
+	encryptedData, err := w.aesCrypto.Encrypt(jsonData)
+	if err != nil {
+		fmt.Printf("⚠️ 加密失败，发送原始数据: %v\n", err)
+		return jsonData, nil
+	}
+
+	encryptedMessage := map[string]interface{}{
+		"encrypted": true,
+		"data":      encryptedData,
+		"timestamp": time.Now().Unix(),
+	}
+	messageData, err := json.Marshal(encryptedMessage)
+	if err != nil {
+		fmt.Printf("⚠️ 序列化加密消息失败，发送原始数据: %v\n", err)
+		return jsonData, nil
+	}
+	return messageData, nil
+}
+
+func (w *WebSocketReporter) sendHTTPHeartbeat(sysInfo SystemInfo) error {
+	if w.addr == "" || w.secret == "" {
+		return fmt.Errorf("缺少节点通信地址或密钥")
+	}
+
+	messageData, err := w.buildSystemInfoMessage(sysInfo)
+	if err != nil {
+		return err
+	}
+
+	cfg := w.readLocalProtocolConfig()
+	endpoint := "http://" + w.addr + "/system-info?type=1&secret=" + url.QueryEscape(w.secret) +
+		"&version=" + url.QueryEscape(w.version) +
+		"&http=" + strconv.Itoa(cfg.Http) +
+		"&tls=" + strconv.Itoa(cfg.Tls) +
+		"&socks=" + strconv.Itoa(cfg.Socks)
+	client := &http.Client{Timeout: 8 * time.Second}
+	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(messageData))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("server returned %s", resp.Status)
+	}
+	return nil
+}
+
+type localProtocolConfig struct {
+	Http  int `json:"http"`
+	Tls   int `json:"tls"`
+	Socks int `json:"socks"`
+}
+
+func (w *WebSocketReporter) readLocalProtocolConfig() localProtocolConfig {
+	var cfg localProtocolConfig
+	if b, err := os.ReadFile("config.json"); err == nil {
+		_ = json.Unmarshal(b, &cfg)
+	}
+	return cfg
 }
 
 // receiveMessages 接收服务端发送的消息
