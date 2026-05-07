@@ -217,8 +217,7 @@ func (w *WebSocketReporter) connect() error {
 	}
 
 	// 使用最新的配置重新构建 URL
-	currentURL := "ws://" + w.addr + "/system-info?type=1&secret=" + w.secret + "&version=" + w.version +
-		"&http=" + strconv.Itoa(cfg.Http) + "&tls=" + strconv.Itoa(cfg.Tls) + "&socks=" + strconv.Itoa(cfg.Socks)
+	currentURL := buildSystemInfoWebSocketURL(w.addr, w.secret, w.version, cfg.Http, cfg.Tls, cfg.Socks)
 
 	u, err := url.Parse(currentURL)
 	if err != nil {
@@ -378,11 +377,7 @@ func (w *WebSocketReporter) sendHTTPHeartbeat(sysInfo SystemInfo) error {
 	}
 
 	cfg := w.readLocalProtocolConfig()
-	endpoint := "http://" + w.addr + "/system-info?type=1&secret=" + url.QueryEscape(w.secret) +
-		"&version=" + url.QueryEscape(w.version) +
-		"&http=" + strconv.Itoa(cfg.Http) +
-		"&tls=" + strconv.Itoa(cfg.Tls) +
-		"&socks=" + strconv.Itoa(cfg.Socks)
+	endpoint := buildSystemInfoHTTPURL(w.addr, w.secret, w.version, cfg.Http, cfg.Tls, cfg.Socks)
 	client := &http.Client{Timeout: 8 * time.Second}
 	resp, err := client.Post(endpoint, "application/json", bytes.NewReader(messageData))
 	if err != nil {
@@ -1093,7 +1088,7 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 	addr = normalizeReporterAddr(addr)
 
 	// 构建初始 WebSocket URL
-	fullURL := "ws://" + addr + "/system-info?type=1&secret=" + secret + "&version=" + version + "&http=" + strconv.Itoa(http) + "&tls=" + strconv.Itoa(tls) + "&socks=" + strconv.Itoa(socks)
+	fullURL := buildSystemInfoWebSocketURL(addr, secret, version, http, tls, socks)
 
 	fmt.Printf("🔗 WebSocket连接URL: %s\n", fullURL)
 
@@ -1108,13 +1103,67 @@ func StartWebSocketReporterWithConfig(addr string, secret string, http int, tls 
 
 func normalizeReporterAddr(addr string) string {
 	addr = strings.TrimSpace(addr)
-	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
-		addr = strings.TrimPrefix(addr, prefix)
+	if idx := strings.Index(addr, "://"); idx >= 0 {
+		scheme := strings.ToLower(addr[:idx])
+		rest := addr[idx+3:]
+		if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+			rest = rest[:cut]
+		}
+		return scheme + "://" + rest
 	}
 	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
 		addr = addr[:idx]
 	}
 	return addr
+}
+
+func buildSystemInfoWebSocketURL(addr, secret, version string, httpEnabled, tlsEnabled, socksEnabled int) string {
+	return buildControlURL(webSocketBaseURL(addr), secret, version, httpEnabled, tlsEnabled, socksEnabled)
+}
+
+func buildSystemInfoHTTPURL(addr, secret, version string, httpEnabled, tlsEnabled, socksEnabled int) string {
+	return buildControlURL(httpBaseURL(addr), secret, version, httpEnabled, tlsEnabled, socksEnabled)
+}
+
+func buildControlURL(base, secret, version string, httpEnabled, tlsEnabled, socksEnabled int) string {
+	values := url.Values{}
+	values.Set("type", "1")
+	values.Set("secret", secret)
+	values.Set("version", version)
+	values.Set("http", strconv.Itoa(httpEnabled))
+	values.Set("tls", strconv.Itoa(tlsEnabled))
+	values.Set("socks", strconv.Itoa(socksEnabled))
+	return strings.TrimRight(base, "/") + "/system-info?" + values.Encode()
+}
+
+func webSocketBaseURL(addr string) string {
+	addr = normalizeReporterAddr(addr)
+	lower := strings.ToLower(addr)
+	switch {
+	case strings.HasPrefix(lower, "https://"):
+		return "wss://" + addr[len("https://"):]
+	case strings.HasPrefix(lower, "http://"):
+		return "ws://" + addr[len("http://"):]
+	case strings.HasPrefix(lower, "ws://") || strings.HasPrefix(lower, "wss://"):
+		return addr
+	default:
+		return "ws://" + addr
+	}
+}
+
+func httpBaseURL(addr string) string {
+	addr = normalizeReporterAddr(addr)
+	lower := strings.ToLower(addr)
+	switch {
+	case strings.HasPrefix(lower, "wss://"):
+		return "https://" + addr[len("wss://"):]
+	case strings.HasPrefix(lower, "ws://"):
+		return "http://" + addr[len("ws://"):]
+	case strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://"):
+		return addr
+	default:
+		return "http://" + addr
+	}
 }
 
 // handleTcpPing 处理TCP ping诊断命令

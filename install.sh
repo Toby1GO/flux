@@ -146,10 +146,15 @@ get_config_params() {
 
 normalize_server_addr() {
   local addr="$1"
-  addr="${addr#http://}"
-  addr="${addr#https://}"
-  addr="${addr#ws://}"
-  addr="${addr#wss://}"
+  if [[ "$addr" =~ ^([A-Za-z][A-Za-z0-9+.-]*://)(.*)$ ]]; then
+    local scheme="${BASH_REMATCH[1]}"
+    local rest="${BASH_REMATCH[2]}"
+    rest="${rest%%/*}"
+    rest="${rest%%\?*}"
+    rest="${rest%%#*}"
+    printf '%s' "${scheme}${rest}"
+    return
+  fi
   addr="${addr%%/*}"
   addr="${addr%%\?*}"
   addr="${addr%%#*}"

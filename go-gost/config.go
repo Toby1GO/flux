@@ -46,8 +46,13 @@ func LoadConfig(configPath string) (*Config, error) {
 
 func normalizePanelAddr(addr string) string {
 	addr = strings.TrimSpace(addr)
-	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
-		addr = strings.TrimPrefix(addr, prefix)
+	if idx := strings.Index(addr, "://"); idx >= 0 {
+		scheme := strings.ToLower(addr[:idx])
+		rest := addr[idx+3:]
+		if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+			rest = rest[:cut]
+		}
+		return scheme + "://" + rest
 	}
 	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
 		addr = addr[:idx]

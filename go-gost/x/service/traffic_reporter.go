@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -27,9 +28,10 @@ type TrafficReportItem struct {
 }
 
 func SetHTTPReportURL(addr string, secret string) {
-	addr = normalizeReportAddr(addr)
-	httpReportURL = "http://" + addr + "/flow/upload?secret=" + secret
-	configReportURL = "http://" + addr + "/flow/config?secret=" + secret
+	baseURL := httpReportBaseURL(addr)
+	escapedSecret := url.QueryEscape(secret)
+	httpReportURL = baseURL + "/flow/upload?secret=" + escapedSecret
+	configReportURL = baseURL + "/flow/config?secret=" + escapedSecret
 
 	// 创建 AES 加密器
 	var err error
@@ -44,13 +46,33 @@ func SetHTTPReportURL(addr string, secret string) {
 
 func normalizeReportAddr(addr string) string {
 	addr = strings.TrimSpace(addr)
-	for _, prefix := range []string{"http://", "https://", "ws://", "wss://"} {
-		addr = strings.TrimPrefix(addr, prefix)
+	if idx := strings.Index(addr, "://"); idx >= 0 {
+		scheme := strings.ToLower(addr[:idx])
+		rest := addr[idx+3:]
+		if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+			rest = rest[:cut]
+		}
+		return scheme + "://" + rest
 	}
 	if idx := strings.IndexAny(addr, "/?#"); idx >= 0 {
 		addr = addr[:idx]
 	}
 	return addr
+}
+
+func httpReportBaseURL(addr string) string {
+	addr = normalizeReportAddr(addr)
+	lower := strings.ToLower(addr)
+	switch {
+	case strings.HasPrefix(lower, "wss://"):
+		return "https://" + addr[len("wss://"):]
+	case strings.HasPrefix(lower, "ws://"):
+		return "http://" + addr[len("ws://"):]
+	case strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://"):
+		return strings.TrimRight(addr, "/")
+	default:
+		return "http://" + strings.TrimRight(addr, "/")
+	}
 }
 
 // sendBatchTrafficReport 批量发送多个服务的流量报告到HTTP接口

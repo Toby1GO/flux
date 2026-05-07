@@ -43,7 +43,6 @@ type Config struct {
 	DBPath          string
 	JWTSecret       string
 	PublicAddr      string
-	AgentPublicAddr string
 	AgentInstallURL string
 	AgentReleaseURL string
 	StaticDir       string
@@ -172,7 +171,6 @@ func loadConfig() Config {
 		DBPath:          env("FLUX_DB_PATH", defaultDBPath),
 		JWTSecret:       env("JWT_SECRET", defaultJWT),
 		PublicAddr:      os.Getenv("PUBLIC_ADDR"),
-		AgentPublicAddr: env("AGENT_PUBLIC_ADDR", os.Getenv("PUBLIC_ADDR")),
 		AgentInstallURL: os.Getenv("AGENT_INSTALL_URL"),
 		AgentReleaseURL: os.Getenv("AGENT_RELEASE_URL"),
 		StaticDir:       os.Getenv("STATIC_DIR"),
@@ -895,22 +893,14 @@ func (a *App) handleNodeInstall(w http.ResponseWriter, r *http.Request) {
 		fail(w, -1, "节点不存在")
 		return
 	}
-	publicAddr := a.cfg.AgentPublicAddr
-	if publicAddr == "" {
-		if cfg, err := a.queryOne(`SELECT value FROM vite_config WHERE name='agent_addr'`); err == nil {
-			publicAddr = strVal(cfg["value"])
-		}
-	}
+	publicAddr := a.cfg.PublicAddr
 	if publicAddr == "" {
 		if cfg, err := a.queryOne(`SELECT value FROM vite_config WHERE name='ip'`); err == nil {
 			publicAddr = strVal(cfg["value"])
 		}
 	}
 	if publicAddr == "" {
-		publicAddr = a.cfg.PublicAddr
-	}
-	if publicAddr == "" {
-		fail(w, -1, "请先在网站配置中设置节点通信地址")
+		fail(w, -1, "请先在网站配置中设置面板后端地址")
 		return
 	}
 	url := a.cfg.AgentInstallURL
@@ -922,7 +912,7 @@ func (a *App) handleNodeInstall(w http.ResponseWriter, r *http.Request) {
 		releaseEnv = "FLUX_AGENT_RELEASE_URL=" + shellQuote(a.cfg.AgentReleaseURL) + " "
 	}
 	cmd := fmt.Sprintf("curl -L %s -o ./install.sh && chmod +x ./install.sh && %s./install.sh -a %s -s %s",
-		url, releaseEnv, shellQuote(processServerAddress(publicAddr)), shellQuote(strVal(node["secret"])))
+		url, releaseEnv, shellQuote(processAgentAddress(publicAddr)), shellQuote(strVal(node["secret"])))
 	ok(w, cmd)
 }
 
@@ -1336,17 +1326,18 @@ func (a *App) handleSpeedLimitDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleFlowTest(w http.ResponseWriter, r *http.Request) {
+	a.touchNodeBySecret(r.URL.Query().Get("secret"))
 	_, _ = w.Write([]byte("test"))
 }
 
 func (a *App) handleFlowConfig(w http.ResponseWriter, r *http.Request) {
+	a.touchNodeBySecret(r.URL.Query().Get("secret"))
 	_, _ = w.Write([]byte("ok"))
 }
 
 func (a *App) handleFlowUpload(w http.ResponseWriter, r *http.Request) {
 	secret := r.URL.Query().Get("secret")
-	var nodeID int64
-	if err := a.db.QueryRow(`SELECT id FROM node WHERE secret=?`, secret).Scan(&nodeID); err != nil {
+	if _, ok := a.touchNodeBySecret(secret); !ok {
 		_, _ = w.Write([]byte("ok"))
 		return
 	}
@@ -1368,6 +1359,23 @@ func (a *App) handleFlowUpload(w http.ResponseWriter, r *http.Request) {
 		a.processFlow(item.N, item.D, item.U)
 	}
 	_, _ = w.Write([]byte("ok"))
+}
+
+func (a *App) touchNodeBySecret(secret string) (int64, bool) {
+	if strings.TrimSpace(secret) == "" {
+		return 0, false
+	}
+	node, err := a.queryOne(`SELECT id,status FROM node WHERE secret=?`, secret)
+	if err != nil {
+		return 0, false
+	}
+	id := int64(intVal(node["id"], 0))
+	wasOffline := intVal(node["status"], 0) != 1
+	_, _ = a.db.Exec(`UPDATE node SET status=1,updated_time=? WHERE id=?`, nowMS(), id)
+	if wasOffline {
+		a.broadcast(map[string]any{"id": id, "type": "status", "data": 1})
+	}
+	return id, true
 }
 
 func (a *App) handleSystemInfo(w http.ResponseWriter, r *http.Request) {

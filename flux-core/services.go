@@ -952,6 +952,22 @@ func processServerAddress(serverAddr string) string {
 	return serverAddr
 }
 
+func processAgentAddress(serverAddr string) string {
+	addr := strings.TrimSpace(serverAddr)
+	if idx := strings.Index(addr, "://"); idx >= 0 {
+		scheme := addr[:idx+3]
+		rest := addr[idx+3:]
+		if at := strings.LastIndex(rest, "@"); at >= 0 {
+			rest = rest[at+1:]
+		}
+		if cut := strings.IndexAny(rest, "/?#"); cut >= 0 {
+			rest = rest[:cut]
+		}
+		return scheme + rest
+	}
+	return processServerAddress(addr)
+}
+
 func stripAddressScheme(serverAddr string) string {
 	addr := strings.TrimSpace(serverAddr)
 	if idx := strings.Index(addr, "://"); idx >= 0 {
