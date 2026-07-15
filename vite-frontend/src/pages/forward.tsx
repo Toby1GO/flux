@@ -1668,6 +1668,7 @@ export default function ForwardPage() {
 
                     <Input
                       label="到期时间"
+                      labelPlacement="outside"
                       type="datetime-local"
                       value={form.expTime}
                       onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}

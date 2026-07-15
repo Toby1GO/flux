@@ -27,7 +27,7 @@
 
 ## 部署与更新
 
-本仓库仅维护基于上游 `2.0.7-beta` 二次开发的 Beta 版本，当前版本为 `2.0.8-beta`，使用 Docker Compose 和 SQLite。
+本仓库仅维护基于上游 `2.0.7-beta` 二次开发的 Beta 版本，当前版本为 `2.0.9-beta`，使用 Docker Compose 和 SQLite。
 
 ### 面板安装或更新
 
