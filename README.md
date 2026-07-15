@@ -22,30 +22,34 @@
 - 可针对 **指定用户的指定隧道进行限速** 设置
 - 支持配置 **单向或双向流量计费方式**，灵活适配不同计费模型
 - 提供灵活的转发策略配置，适用于多种网络场景
+- 支持为每条转发单独设置 **到期时间**，到期后自动暂停
 
 
-## 部署流程
----
-### Docker Compose部署
-#### 快速部署
-面板端(稳定版)：
+## 部署与更新
+
+本仓库仅维护基于上游 `2.0.7-beta` 二次开发的 Beta 版本，当前版本为 `2.0.8-beta`，使用 Docker Compose 和 SQLite。
+
+### 面板安装或更新
+
 ```bash
 curl -L https://raw.githubusercontent.com/Toby1GO/flux/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
 ```
-节点端(稳定版)：
-```bash
-curl -L https://raw.githubusercontent.com/Toby1GO/flux/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
 
+- 新服务器选择 `1. 安装面板`。
+- 已部署服务器选择 `2. 更新面板`。
+- 更新不会删除名为 `sqlite_data` 的数据卷。
+- 如果当前目录没有 `.env`，脚本会重新询问前后端端口并生成 JWT 配置，SQLite 数据仍会保留。
+
+更新前可确认数据卷存在：
+
+```bash
+docker volume ls | grep sqlite_data
 ```
 
-面板端(开发版)：
-```bash
-curl -L https://raw.githubusercontent.com/Toby1GO/flux/main/panel_install.sh -o panel_install.sh && chmod +x panel_install.sh && ./panel_install.sh
-```
-节点端(开发版)：
+### 节点安装或更新
+
 ```bash
 curl -L https://raw.githubusercontent.com/Toby1GO/flux/main/install.sh -o install.sh && chmod +x install.sh && ./install.sh
-
 ```
 
 #### 默认管理员账号
