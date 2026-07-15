@@ -29,6 +29,27 @@ get_docker_compose_url() {
   fi
 }
 
+# 安全下载 Compose 配置：Release 未就绪或内容异常时不覆盖现有文件。
+download_docker_compose() {
+  local url="$1"
+  local temp_file
+  temp_file="$(mktemp)"
+
+  if ! curl --fail --location --show-error --output "$temp_file" "$url"; then
+    rm -f "$temp_file"
+    echo "❌ 下载 Compose 配置失败，Release 可能仍在构建中：$url"
+    return 1
+  fi
+
+  if ! grep -q '^services:' "$temp_file"; then
+    echo "❌ 下载内容不是有效的 Docker Compose 配置，已保留原文件。"
+    rm -f "$temp_file"
+    return 1
+  fi
+
+  mv "$temp_file" docker-compose.yml
+}
+
 # 检查 docker-compose 或 docker compose 命令
 check_docker() {
   if command -v docker-compose &> /dev/null; then
@@ -189,7 +210,7 @@ install_panel() {
   echo "🔽 下载必要文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-  curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+  download_docker_compose "$DOCKER_COMPOSE_URL" || return 1
   echo "✅ 文件准备完成"
 
   # 自动检测并配置 IPv6 支持
@@ -236,7 +257,7 @@ EOF
   echo "🔽 下载最新配置文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)
   echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-  curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+  download_docker_compose "$DOCKER_COMPOSE_URL" || return 1
   echo "✅ 下载完成"
 
   # 自动检测并配置 IPv6 支持
@@ -310,7 +331,7 @@ uninstall_panel() {
     echo "⚠️ 未找到 docker-compose.yml 文件，正在下载以完成卸载..."
     DOCKER_COMPOSE_URL=$(get_docker_compose_url)
     echo "📡 选择配置文件：$(basename "$DOCKER_COMPOSE_URL")"
-    curl -L -o docker-compose.yml "$DOCKER_COMPOSE_URL"
+    download_docker_compose "$DOCKER_COMPOSE_URL" || return 1
     echo "✅ docker-compose.yml 下载完成"
   fi
 
