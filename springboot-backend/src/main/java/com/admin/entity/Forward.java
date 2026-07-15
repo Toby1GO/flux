@@ -44,5 +44,8 @@ public class Forward extends BaseEntity{
     /** 转发到期时间（毫秒时间戳），0 或空表示永不过期 */
     private Long expTime;
 
+    /** 单条转发总流量额度（GB），0 表示不限 */
+    private Long flow;
+
     private Integer inx;
 }

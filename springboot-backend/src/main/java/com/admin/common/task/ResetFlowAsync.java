@@ -241,12 +241,18 @@ public class ResetFlowAsync {
     @Scheduled(fixedDelay = 60000, initialDelay = 60000)
     public void forward() {
         List<Forward> expiredForwards = forwardService.list(
-                new QueryWrapper<Forward>()
-                        .eq("status", 1)
-                        .gt("exp_time", 0)
-                        .le("exp_time", System.currentTimeMillis()));
+                new QueryWrapper<Forward>().eq("status", 1));
 
         for (Forward forward : expiredForwards) {
+            long flow = forward.getFlow() == null ? 0 : forward.getFlow();
+            long inFlow = forward.getInFlow() == null ? 0 : forward.getInFlow();
+            long outFlow = forward.getOutFlow() == null ? 0 : forward.getOutFlow();
+            boolean expired = forward.getExpTime() != null && forward.getExpTime() > 0
+                    && forward.getExpTime() <= System.currentTimeMillis();
+            boolean flowExhausted = flow > 0 && inFlow + outFlow >= flow * 1024L * 1024L * 1024L;
+            if (!expired && !flowExhausted) {
+                continue;
+            }
             UserTunnel userTunnel = userTunnelService.getOne(
                     new QueryWrapper<UserTunnel>()
                             .eq("user_id", forward.getUserId())
@@ -263,7 +269,8 @@ public class ResetFlowAsync {
             forward.setStatus(0);
             forward.setUpdatedTime(System.currentTimeMillis());
             forwardService.updateById(forward);
-            log.info("转发[ID: {}, 名称: {}]已到期并暂停", forward.getId(), forward.getName());
+            log.info("转发[ID: {}, 名称: {}]因{}暂停", forward.getId(), forward.getName(),
+                    expired ? "到期" : "流量额度用完");
         }
     }
 

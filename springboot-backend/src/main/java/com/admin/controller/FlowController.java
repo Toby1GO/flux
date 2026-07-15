@@ -246,11 +246,29 @@ public class FlowController extends BaseController {
 
         // 7. 检查和服务暂停操作
         String name = buildServiceName(forwardId, userId, userTunnelId);
+        if (checkForwardFlowLimit(forwardId, name)) {
+            return;
+        }
         if (!Objects.equals(userTunnelId, DEFAULT_USER_TUNNEL_ID)) { // 非管理员的转发需要检测流量限制
             checkUserRelatedLimits(userId, name);
             checkUserTunnelRelatedLimits(userTunnelId, name, userId);
         }
 
+    }
+
+    private boolean checkForwardFlowLimit(String forwardId, String name) {
+        Forward forward = forwardService.getById(forwardId);
+        if (forward == null || forward.getFlow() == null || forward.getFlow() <= 0) {
+            return false;
+        }
+        long inFlow = forward.getInFlow() == null ? 0 : forward.getInFlow();
+        long outFlow = forward.getOutFlow() == null ? 0 : forward.getOutFlow();
+        if (inFlow + outFlow < forward.getFlow() * BYTES_TO_GB) {
+            return false;
+        }
+        pauseService(java.util.Collections.singletonList(forward), name);
+        log.info("转发[ID: {}, 名称: {}]已达到{}GB额度并暂停", forward.getId(), forward.getName(), forward.getFlow());
+        return true;
     }
 
     private void checkUserRelatedLimits(String userId, String name) {

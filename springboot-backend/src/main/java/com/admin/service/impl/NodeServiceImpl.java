@@ -126,7 +126,7 @@ public class NodeServiceImpl extends ServiceImpl<NodeMapper, Node> implements No
         ViteConfig viteConfig = viteConfigService.getOne(new QueryWrapper<ViteConfig>().eq("name", "ip"));
         if (viteConfig == null) return R.err("请先前往网站配置中设置ip");
         StringBuilder command = new StringBuilder();
-        command.append("curl -L https://github.com/Toby1GO/flux/releases/download/2.0.9-beta/install.sh")
+        command.append("curl -L https://github.com/Toby1GO/flux/releases/download/2.0.10/install.sh")
                 .append(" -o ./install.sh && chmod +x ./install.sh && ");
         String processedServerAddr = GostUtil.processServerAddress(viteConfig.getValue());
         command.append("./install.sh")

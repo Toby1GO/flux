@@ -1,6 +1,6 @@
 services:
   backend:
-    image: ghcr.io/toby1go/flux-backend:2.0.9-beta
+    image: ghcr.io/toby1go/flux-backend:2.0.10
     container_name: springboot-backend
     restart: unless-stopped
     environment:
@@ -25,7 +25,7 @@ services:
       start_period: 60s
 
   frontend:
-    image: ghcr.io/toby1go/flux-frontend:2.0.9-beta
+    image: ghcr.io/toby1go/flux-frontend:2.0.10
     container_name: vite-frontend
     restart: unless-stopped
     ports:

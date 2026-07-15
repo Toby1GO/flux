@@ -18,6 +18,7 @@
             f.strategy AS strategy,
             f.out_flow AS outFlow,
             f.exp_time AS expTime,
+            f.flow AS flow,
             f.inx AS inx,
             t.name AS tunnelName,
             t.type
@@ -44,6 +45,7 @@
             f.in_flow AS inFlow,
             f.out_flow AS outFlow,
             f.exp_time AS expTime,
+            f.flow AS flow,
             f.strategy AS strategy,
             f.inx AS inx,
             t.name AS tunnelName,

@@ -27,5 +27,12 @@ public class DatabaseMigration implements ApplicationRunner {
             jdbcTemplate.execute("ALTER TABLE forward ADD COLUMN exp_time INTEGER NOT NULL DEFAULT 0");
             log.info("数据库迁移完成：forward.exp_time");
         }
+
+        boolean hasFlow = columns.stream()
+                .anyMatch(column -> "flow".equalsIgnoreCase(String.valueOf(column.get("name"))));
+        if (!hasFlow) {
+            jdbcTemplate.execute("ALTER TABLE forward ADD COLUMN flow INTEGER NOT NULL DEFAULT 0");
+            log.info("数据库迁移完成：forward.flow");
+        }
     }
 }

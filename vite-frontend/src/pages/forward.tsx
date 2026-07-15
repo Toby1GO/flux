@@ -65,6 +65,7 @@ interface Forward {
   userId?: number;
   inx?: number;
   expTime?: number | null;
+  flow?: number | null;
 }
 
 interface Tunnel {
@@ -84,6 +85,7 @@ interface ForwardForm {
   interfaceName?: string;
   strategy: string;
   expTime: string;
+  flow: string;
 }
 
 const toLocalDateTimeValue = (timestamp?: number | null): string => {
@@ -212,7 +214,8 @@ export default function ForwardPage() {
     remoteAddr: '',
     interfaceName: '',
     strategy: 'fifo',
-    expTime: ''
+    expTime: '',
+    flow: ''
   });
   
   // 表单验证错误
@@ -452,6 +455,9 @@ export default function ForwardPage() {
     if (form.expTime && fromLocalDateTimeValue(form.expTime) <= Date.now()) {
       newErrors.expTime = '到期时间必须晚于当前时间';
     }
+    if (form.flow && Number(form.flow) < 0) {
+      newErrors.flow = '总流量额度不能小于 0';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -467,7 +473,8 @@ export default function ForwardPage() {
       remoteAddr: '',
       interfaceName: '',
       strategy: 'fifo',
-      expTime: ''
+      expTime: '',
+      flow: ''
     });
     setErrors({});
     setModalOpen(true);
@@ -485,7 +492,8 @@ export default function ForwardPage() {
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
       strategy: forward.strategy || 'fifo',
-      expTime: toLocalDateTimeValue(forward.expTime)
+      expTime: toLocalDateTimeValue(forward.expTime),
+      flow: forward.flow && forward.flow > 0 ? String(forward.flow) : ''
     });
     setErrors({});
     setModalOpen(true);
@@ -560,7 +568,8 @@ export default function ForwardPage() {
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo',
-          expTime: fromLocalDateTimeValue(form.expTime)
+          expTime: fromLocalDateTimeValue(form.expTime),
+          flow: form.flow ? Number(form.flow) : 0
         };
         res = await updateForward(updateData);
       } else {
@@ -571,7 +580,8 @@ export default function ForwardPage() {
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
           strategy: addressCount > 1 ? form.strategy : 'fifo',
-          expTime: fromLocalDateTimeValue(form.expTime)
+          expTime: fromLocalDateTimeValue(form.expTime),
+          flow: form.flow ? Number(form.flow) : 0
         };
         res = await createForward(createData);
       }
@@ -1319,6 +1329,13 @@ export default function ForwardPage() {
               </span>
             </div>
 
+            <div className="flex items-center justify-between text-xs text-default-500">
+              <span>规则流量</span>
+              <span>
+                {formatFlow((forward.inFlow || 0) + (forward.outFlow || 0))} / {forward.flow ? `${forward.flow} GB` : '不限'}
+              </span>
+            </div>
+
             {/* 统计信息 */}
             <div className="flex items-center justify-between pt-2 border-t border-divider">
               <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
@@ -1666,17 +1683,38 @@ export default function ForwardPage() {
                       description="指定入口端口，留空则从节点可用端口中自动分配"
                     />
 
-                    <Input
-                      label="到期时间"
-                      labelPlacement="outside"
-                      type="datetime-local"
-                      value={form.expTime}
-                      onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
-                      isInvalid={!!errors.expTime}
-                      errorMessage={errors.expTime}
-                      variant="bordered"
-                      description="留空表示永不过期；到期后系统会自动暂停该转发"
-                    />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-1.5">
+                        <label className="block text-sm text-foreground" htmlFor="forward-exp-time">
+                          到期时间
+                        </label>
+                        <Input
+                          id="forward-exp-time"
+                          aria-label="到期时间"
+                          type="datetime-local"
+                          value={form.expTime}
+                          onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
+                          isInvalid={!!errors.expTime}
+                          errorMessage={errors.expTime}
+                          variant="bordered"
+                        />
+                        <p className="text-xs text-default-400">留空表示永不过期，到期后自动暂停</p>
+                      </div>
+
+                      <Input
+                        label="总流量额度 (GB)"
+                        placeholder="留空或 0 表示不限"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={form.flow}
+                        onChange={(e) => setForm(prev => ({ ...prev, flow: e.target.value }))}
+                        isInvalid={!!errors.flow}
+                        errorMessage={errors.flow}
+                        variant="bordered"
+                        description="累计上下行流量达到额度后自动暂停"
+                      />
+                    </div>
                     
                     <Textarea
                       label="远程地址"

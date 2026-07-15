@@ -29,4 +29,6 @@ public class ForwardUpdateDto {
 
     private Long expTime;
 
+    private Long flow;
+
 } 

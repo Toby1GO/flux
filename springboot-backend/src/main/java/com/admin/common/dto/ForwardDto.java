@@ -25,4 +25,6 @@ public class ForwardDto {
     private Integer inPort;
 
     private Long expTime;
+
+    private Long flow;
 } 

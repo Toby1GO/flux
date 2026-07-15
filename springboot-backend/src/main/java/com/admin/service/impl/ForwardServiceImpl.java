@@ -253,6 +253,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         existForward.setName(forwardUpdateDto.getName());
         existForward.setStrategy(forwardUpdateDto.getStrategy());
         existForward.setExpTime(forwardUpdateDto.getExpTime() == null ? 0L : forwardUpdateDto.getExpTime());
+        existForward.setFlow(forwardUpdateDto.getFlow() == null ? 0L : forwardUpdateDto.getFlow());
         existForward.setStatus(1);
         this.updateById(existForward);
 
@@ -349,11 +350,21 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         if (forward != null && isExpired(forward.getExpTime())) {
             return R.err("该转发已到期，请先修改到期时间");
         }
+        if (forward != null && isFlowExhausted(forward)) {
+            return R.err("该转发的总流量额度已用完，请先增加额度");
+        }
         return changeForwardStatus(id, 1, "ResumeService");
     }
 
     private boolean isExpired(Long expTime) {
         return expTime != null && expTime > 0 && expTime <= System.currentTimeMillis();
+    }
+
+    private boolean isFlowExhausted(Forward forward) {
+        long flow = forward.getFlow() == null ? 0 : forward.getFlow();
+        long inFlow = forward.getInFlow() == null ? 0 : forward.getInFlow();
+        long outFlow = forward.getOutFlow() == null ? 0 : forward.getOutFlow();
+        return flow > 0 && inFlow + outFlow >= flow * BYTES_TO_GB;
     }
 
     @Override
