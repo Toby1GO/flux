@@ -64,6 +64,7 @@ interface Forward {
   userName?: string;
   userId?: number;
   inx?: number;
+  expTime?: number | null;
 }
 
 interface Tunnel {
@@ -82,7 +83,22 @@ interface ForwardForm {
   remoteAddr: string;
   interfaceName?: string;
   strategy: string;
+  expTime: string;
 }
+
+const toLocalDateTimeValue = (timestamp?: number | null): string => {
+  if (!timestamp) return '';
+  const date = new Date(timestamp);
+  const offset = date.getTimezoneOffset() * 60_000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+};
+
+const fromLocalDateTimeValue = (value: string): number => value ? new Date(value).getTime() : 0;
+
+const formatExpiration = (timestamp?: number | null): string => {
+  if (!timestamp) return '永不过期';
+  return new Date(timestamp).toLocaleString('zh-CN', { hour12: false });
+};
 
 interface AddressItem {
   id: number;
@@ -195,7 +211,8 @@ export default function ForwardPage() {
     inPort: null,
     remoteAddr: '',
     interfaceName: '',
-    strategy: 'fifo'
+    strategy: 'fifo',
+    expTime: ''
   });
   
   // 表单验证错误
@@ -431,6 +448,10 @@ export default function ForwardPage() {
         }
       }
     }
+
+    if (form.expTime && fromLocalDateTimeValue(form.expTime) <= Date.now()) {
+      newErrors.expTime = '到期时间必须晚于当前时间';
+    }
     
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -445,7 +466,8 @@ export default function ForwardPage() {
       inPort: null,
       remoteAddr: '',
       interfaceName: '',
-      strategy: 'fifo'
+      strategy: 'fifo',
+      expTime: ''
     });
     setErrors({});
     setModalOpen(true);
@@ -462,7 +484,8 @@ export default function ForwardPage() {
       inPort: forward.inPort,
       remoteAddr: forward.remoteAddr.split(',').join('\n'),
       interfaceName: forward.interfaceName || '',
-      strategy: forward.strategy || 'fifo'
+      strategy: forward.strategy || 'fifo',
+      expTime: toLocalDateTimeValue(forward.expTime)
     });
     setErrors({});
     setModalOpen(true);
@@ -536,7 +559,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          expTime: fromLocalDateTimeValue(form.expTime)
         };
         res = await updateForward(updateData);
       } else {
@@ -546,7 +570,8 @@ export default function ForwardPage() {
           tunnelId: form.tunnelId,
           inPort: form.inPort,
           remoteAddr: processedRemoteAddr,
-          strategy: addressCount > 1 ? form.strategy : 'fifo'
+          strategy: addressCount > 1 ? form.strategy : 'fifo',
+          expTime: fromLocalDateTimeValue(form.expTime)
         };
         res = await createForward(createData);
       }
@@ -1287,6 +1312,13 @@ export default function ForwardPage() {
               </div>
             </div>
 
+            <div className="flex items-center justify-between text-xs text-default-500">
+              <span>到期时间</span>
+              <span className={forward.expTime && forward.expTime <= Date.now() ? 'text-danger' : ''}>
+                {formatExpiration(forward.expTime)}
+              </span>
+            </div>
+
             {/* 统计信息 */}
             <div className="flex items-center justify-between pt-2 border-t border-divider">
               <Chip color={strategyDisplay.color as any} variant="flat" size="sm" className="text-xs">
@@ -1632,6 +1664,17 @@ export default function ForwardPage() {
                       errorMessage={errors.inPort}
                       variant="bordered"
                       description="指定入口端口，留空则从节点可用端口中自动分配"
+                    />
+
+                    <Input
+                      label="到期时间"
+                      type="datetime-local"
+                      value={form.expTime}
+                      onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
+                      isInvalid={!!errors.expTime}
+                      errorMessage={errors.expTime}
+                      variant="bordered"
+                      description="留空表示永不过期；到期后系统会自动暂停该转发"
                     />
                     
                     <Textarea

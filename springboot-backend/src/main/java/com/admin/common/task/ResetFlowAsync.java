@@ -237,6 +237,36 @@ public class ResetFlowAsync {
         }
     }
 
+    /** 每分钟暂停已到期的独立转发。 */
+    @Scheduled(fixedDelay = 60000, initialDelay = 60000)
+    public void forward() {
+        List<Forward> expiredForwards = forwardService.list(
+                new QueryWrapper<Forward>()
+                        .eq("status", 1)
+                        .gt("exp_time", 0)
+                        .le("exp_time", System.currentTimeMillis()));
+
+        for (Forward forward : expiredForwards) {
+            UserTunnel userTunnel = userTunnelService.getOne(
+                    new QueryWrapper<UserTunnel>()
+                            .eq("user_id", forward.getUserId())
+                            .eq("tunnel_id", forward.getTunnelId()));
+            int userTunnelId = userTunnel == null ? 0 : userTunnel.getId();
+            List<ChainTunnel> chainTunnels = chainTunnelService.list(
+                    new QueryWrapper<ChainTunnel>()
+                            .eq("tunnel_id", forward.getTunnelId())
+                            .eq("chain_type", 1));
+            for (ChainTunnel chainTunnel : chainTunnels) {
+                String name = buildServiceName(forward.getId(), forward.getUserId(), userTunnelId);
+                GostUtil.PauseAndResumeService(chainTunnel.getNodeId(), name, "PauseService");
+            }
+            forward.setStatus(0);
+            forward.setUpdatedTime(System.currentTimeMillis());
+            forwardService.updateById(forward);
+            log.info("转发[ID: {}, 名称: {}]已到期并暂停", forward.getId(), forward.getName());
+        }
+    }
+
 
 
 

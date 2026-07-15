@@ -2,13 +2,17 @@ name: Build and Push Images Based on Version
 
 # 在这里定义统一版本号
 env:
-  VERSION: "2.0.7-beta"
+  VERSION: "2.0.8-beta"
 
 on:
   push:
     branches:
       - main
       - beta
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   check-version:
@@ -71,7 +75,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v4
         with:
-          go-version: '1.21'
+          go-version: '1.23.4'
 
       - name: Cache Go modules
         uses: actions/cache@v3
@@ -138,11 +142,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to DockerHub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build and push Vite Docker images
         run: |
@@ -150,8 +155,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
-            -t bqlpfy/vite-frontend:latest \
-            -t bqlpfy/vite-frontend:${VERSION} \
+            -t ghcr.io/toby1go/flux-frontend:latest \
+            -t ghcr.io/toby1go/flux-frontend:${VERSION} \
             ./vite-frontend
 
   build-java:
@@ -182,11 +187,12 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
 
-      - name: Log in to DockerHub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v2
         with:
-          username: ${{ secrets.DOCKER_HUB_USERNAME }}
-          password: ${{ secrets.DOCKER_HUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
 
       - name: Build and push Java Docker images
         run: |
@@ -194,8 +200,8 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --push \
-            -t bqlpfy/springboot-backend:latest \
-            -t bqlpfy/springboot-backend:${VERSION} \
+            -t ghcr.io/toby1go/flux-backend:latest \
+            -t ghcr.io/toby1go/flux-backend:${VERSION} \
             ./springboot-backend
 
   create-release:

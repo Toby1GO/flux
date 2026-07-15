@@ -27,4 +27,6 @@ public class ForwardUpdateDto {
 
     private Integer inPort;
 
+    private Long expTime;
+
 } 

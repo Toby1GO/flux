@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS forward (
   strategy VARCHAR(100) NOT NULL DEFAULT 'fifo',
   in_flow INTEGER NOT NULL DEFAULT 0,
   out_flow INTEGER NOT NULL DEFAULT 0,
+  exp_time INTEGER NOT NULL DEFAULT 0,
   created_time INTEGER NOT NULL,
   updated_time INTEGER NOT NULL,
   status INTEGER NOT NULL,

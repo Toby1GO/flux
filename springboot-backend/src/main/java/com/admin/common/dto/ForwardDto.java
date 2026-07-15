@@ -23,4 +23,6 @@ public class ForwardDto {
     private String strategy;
 
     private Integer inPort;
+
+    private Long expTime;
 } 

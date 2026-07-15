@@ -8,8 +8,8 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.7-beta/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/bqlpfy/flux-panel/releases/download/2.0.7-beta/docker-compose-v6.yml"
+DOCKER_COMPOSEV4_URL="https://github.com/Toby1GO/flux/releases/download/2.0.8-beta/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/Toby1GO/flux/releases/download/2.0.8-beta/docker-compose-v6.yml"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then
@@ -221,6 +221,17 @@ EOF
 update_panel() {
   echo "🔄 开始更新面板..."
   check_docker
+
+  if [[ ! -f ".env" ]]; then
+    echo "⚠️ 当前目录没有 .env，将重新生成面板端口与 JWT 配置。"
+    echo "SQLite 数据保存在命名卷 sqlite_data 中，不会因此被删除。"
+    get_config_params
+    cat > .env <<EOF
+JWT_SECRET=$JWT_SECRET
+FRONTEND_PORT=$FRONTEND_PORT
+BACKEND_PORT=$BACKEND_PORT
+EOF
+  fi
 
   echo "🔽 下载最新配置文件..."
   DOCKER_COMPOSE_URL=$(get_docker_compose_url)

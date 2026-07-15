@@ -145,6 +145,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R createForward(ForwardDto forwardDto) {
+        if (isExpired(forwardDto.getExpTime())) {
+            return R.err("到期时间必须晚于当前时间");
+        }
         UserInfo currentUser = getCurrentUserInfo();
 
         Tunnel tunnel = validateTunnel(forwardDto.getTunnelId());
@@ -210,6 +213,9 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R updateForward(ForwardUpdateDto forwardUpdateDto) {
+        if (isExpired(forwardUpdateDto.getExpTime())) {
+            return R.err("到期时间必须晚于当前时间");
+        }
         // 1. 获取当前用户信息
         UserInfo currentUser = getCurrentUserInfo();
 
@@ -246,6 +252,7 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
         existForward.setRemoteAddr(forwardUpdateDto.getRemoteAddr());
         existForward.setName(forwardUpdateDto.getName());
         existForward.setStrategy(forwardUpdateDto.getStrategy());
+        existForward.setExpTime(forwardUpdateDto.getExpTime() == null ? 0L : forwardUpdateDto.getExpTime());
         existForward.setStatus(1);
         this.updateById(existForward);
 
@@ -338,7 +345,15 @@ public class ForwardServiceImpl extends ServiceImpl<ForwardMapper, Forward> impl
 
     @Override
     public R resumeForward(Long id) {
+        Forward forward = this.getById(id);
+        if (forward != null && isExpired(forward.getExpTime())) {
+            return R.err("该转发已到期，请先修改到期时间");
+        }
         return changeForwardStatus(id, 1, "ResumeService");
+    }
+
+    private boolean isExpired(Long expTime) {
+        return expTime != null && expTime > 0 && expTime <= System.currentTimeMillis();
     }
 
     @Override

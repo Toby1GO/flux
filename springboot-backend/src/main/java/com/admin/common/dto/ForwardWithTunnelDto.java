@@ -84,6 +84,8 @@ public class ForwardWithTunnelDto {
      */
     private Long outFlow;
 
+    private Long expTime;
+
     private String strategy;
 
     private Integer inx;

@@ -147,6 +147,8 @@ jspm_packages/
 
 # Optional npm cache directory
 .npm
+.npm-cache/
+work/
 
 # Optional eslint cache
 .eslintcache
