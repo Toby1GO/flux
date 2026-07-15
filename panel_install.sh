@@ -8,8 +8,8 @@ export LC_ALL=C
 
 
 # 全局下载地址配置
-DOCKER_COMPOSEV4_URL="https://github.com/Toby1GO/flux/releases/download/2.0.10/docker-compose-v4.yml"
-DOCKER_COMPOSEV6_URL="https://github.com/Toby1GO/flux/releases/download/2.0.10/docker-compose-v6.yml"
+DOCKER_COMPOSEV4_URL="https://github.com/Toby1GO/flux/releases/download/2.0.11/docker-compose-v4.yml"
+DOCKER_COMPOSEV6_URL="https://github.com/Toby1GO/flux/releases/download/2.0.11/docker-compose-v6.yml"
 
 COUNTRY=$(curl -s https://ipinfo.io/country)
 if [ "$COUNTRY" = "CN" ]; then

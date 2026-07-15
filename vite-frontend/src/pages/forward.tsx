@@ -1685,20 +1685,26 @@ export default function ForwardPage() {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="block text-sm text-foreground" htmlFor="forward-exp-time">
-                          到期时间
-                        </label>
-                        <Input
-                          id="forward-exp-time"
-                          aria-label="到期时间"
-                          type="datetime-local"
-                          value={form.expTime}
-                          onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
-                          isInvalid={!!errors.expTime}
-                          errorMessage={errors.expTime}
-                          variant="bordered"
-                        />
-                        <p className="text-xs text-default-400">留空表示永不过期，到期后自动暂停</p>
+                        <div className={`flex h-14 flex-col justify-center rounded-xl border-2 px-3 transition-colors ${
+                          errors.expTime
+                            ? 'border-danger'
+                            : 'border-default-200 hover:border-default-400 focus-within:border-primary'
+                        }`}>
+                          <label className="mb-1 text-xs leading-none text-default-600" htmlFor="forward-exp-time">
+                            到期时间
+                          </label>
+                          <input
+                            id="forward-exp-time"
+                            aria-label="到期时间"
+                            type="datetime-local"
+                            min={toLocalDateTimeValue(Date.now())}
+                            value={form.expTime}
+                            onChange={(e) => setForm(prev => ({ ...prev, expTime: e.target.value }))}
+                            className="w-full bg-transparent text-sm leading-5 text-foreground outline-none [color-scheme:light] dark:[color-scheme:dark]"
+                          />
+                        </div>
+                        {errors.expTime && <p className="text-xs text-danger">{errors.expTime}</p>}
+                        <p className="text-xs text-default-400">留空表示永不过期；到期后自动暂停</p>
                       </div>
 
                       <Input
