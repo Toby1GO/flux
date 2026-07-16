@@ -90,34 +90,34 @@ jobs:
       - name: Build GOST binary (AMD64)
         working-directory: ./go-gost
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o gost-amd64
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o loulan-amd64
 
       - name: Build GOST binary (ARM64)
         working-directory: ./go-gost
         run: |
-          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o gost-arm64
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o loulan-arm64
 
       - name: Compress with UPX (AMD64)
         working-directory: ./go-gost
         run: |
-          upx --best --lzma gost-amd64
+          upx --best --lzma loulan-amd64
 
       - name: Compress with UPX (ARM64)
         working-directory: ./go-gost
         run: |
-          upx --best --lzma gost-arm64
+          upx --best --lzma loulan-arm64
 
       - name: Upload GOST AMD64 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gost-binary-amd64
-          path: ./go-gost/gost-amd64
+          name: loulan-binary-amd64
+          path: ./go-gost/loulan-amd64
 
       - name: Upload GOST ARM64 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: gost-binary-arm64
-          path: ./go-gost/gost-arm64
+          name: loulan-binary-arm64
+          path: ./go-gost/loulan-arm64
 
   build-vite:
     name: Build & Push Vite Frontend
@@ -210,19 +210,19 @@ jobs:
       - name: Download GOST AMD64 binary
         uses: actions/download-artifact@v4
         with:
-          name: gost-binary-amd64
+          name: loulan-binary-amd64
           path: ./artifacts/amd64
 
       - name: Download GOST ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: gost-binary-arm64
+          name: loulan-binary-arm64
           path: ./artifacts/arm64
 
       - name: Rename binaries
         run: |
-          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
-          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+          mv ./artifacts/amd64/loulan-amd64 ./artifacts/loulan-amd64
+          mv ./artifacts/arm64/loulan-arm64 ./artifacts/loulan-arm64
 
       - name: Create Release
         env:
@@ -261,8 +261,8 @@ jobs:
           
           # 上传所有文件到 release
           echo "📤 上传 GOST 二进制文件..."
-          gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
-          gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+          gh release upload "${VERSION}" ./artifacts/loulan-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/loulan-arm64 --clobber
           
           echo "📤 上传安装脚本..."
           gh release upload "${VERSION}" ./install.sh --clobber
@@ -287,19 +287,19 @@ jobs:
       - name: Download GOST AMD64 binary
         uses: actions/download-artifact@v4
         with:
-          name: gost-binary-amd64
+          name: loulan-binary-amd64
           path: ./artifacts/amd64
 
       - name: Download GOST ARM64 binary
         uses: actions/download-artifact@v4
         with:
-          name: gost-binary-arm64
+          name: loulan-binary-arm64
           path: ./artifacts/arm64
 
       - name: Rename binaries
         run: |
-          mv ./artifacts/amd64/gost-amd64 ./artifacts/gost-amd64
-          mv ./artifacts/arm64/gost-arm64 ./artifacts/gost-arm64
+          mv ./artifacts/amd64/loulan-amd64 ./artifacts/loulan-amd64
+          mv ./artifacts/arm64/loulan-arm64 ./artifacts/loulan-arm64
 
       - name: Update GOST binaries in Release
         env:
@@ -309,8 +309,8 @@ jobs:
           
           echo "🔄 更新 Release ${VERSION} 中的 GOST 二进制文件..."
           
-          gh release upload "${VERSION}" ./artifacts/gost-amd64 --clobber
-          gh release upload "${VERSION}" ./artifacts/gost-arm64 --clobber
+          gh release upload "${VERSION}" ./artifacts/loulan-amd64 --clobber
+          gh release upload "${VERSION}" ./artifacts/loulan-arm64 --clobber
           
           echo "✅ GOST 二进制文件更新完成！"
           echo "ℹ️ Docker 镜像未重新构建"
